@@ -1,0 +1,272 @@
+﻿
+@inherits LayoutComponentBase
+@using MudBlazor
+@using StoreManagement.Web.Services
+
+@inject AuthService AuthService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+
+    <!-- Top App Bar -->
+    <MudAppBar Elevation="1" Color="Color.Dark">
+
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start" />
+
+        <MudText Typo="Typo.h6">
+            Store Management
+        </MudText>
+
+        <MudSpacer />
+
+        <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                       Color="Color.Inherit" />
+
+        <MudDivider Vertical="true"
+                    FlexItem="true"
+                    Class="mx-2" />
+
+        <MudMenu Icon="@Icons.Material.Filled.AccountCircle"
+                 Color="Color.Inherit"
+                 AnchorOrigin="Origin.BottomRight"
+                 TransformOrigin="Origin.TopRight">
+
+            <MudMenuItem Disabled="true">
+                <MudText Typo="Typo.body2">
+                    @GetUserName()
+                </MudText>
+
+                <MudText Typo="Typo.caption"
+                         Color="Color.Secondary">
+                    @GetUserRole()
+                </MudText>
+            </MudMenuItem>
+
+            <MudDivider />
+
+            <MudMenuItem Icon="@Icons.Material.Filled.Logout"
+                         OnClick="Logout">
+                Logout
+            </MudMenuItem>
+
+        </MudMenu>
+
+    </MudAppBar>
+
+
+    <!-- Sidebar -->
+    <MudDrawer Open="true"
+               Variant="DrawerVariant.Responsive"
+               Elevation="2"
+               Color="Color.Dark">
+
+        <MudDrawerHeader>
+
+            <MudText Typo="Typo.h6"
+                     Class="px-4">
+                Store Management
+            </MudText>
+
+        </MudDrawerHeader>
+
+
+        <MudNavMenu>
+
+            <MudNavLink Href="/"
+                        Match="NavLinkMatch.All"
+                        Icon="@Icons.Material.Filled.Dashboard">
+                Dashboard
+            </MudNavLink>
+
+
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2">
+                Masters
+            </MudText>
+
+            <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory2">
+                Products
+            </MudNavLink>
+
+            <MudNavLink Href="/brands"
+                        Icon="@Icons.Material.Filled.Business">
+                Brands
+            </MudNavLink>
+
+            <MudNavLink Href="/categories"
+                        Icon="@Icons.Material.Filled.Category">
+                Categories
+            </MudNavLink>
+
+            <MudNavLink Href="/reason-codes" Icon="@Icons.Material.Filled.Rule">
+                Reason Codes
+            </MudNavLink>
+
+            <MudNavLink Href="/users"
+                        Icon="@Icons.Material.Filled.People">
+                Users
+            </MudNavLink>
+
+            <MudNavLink Href="/stores"
+                        Icon="@Icons.Material.Filled.Store">
+                Stores
+            </MudNavLink>
+
+            <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.Devices">
+                Devices
+            </MudNavLink>
+
+
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2">
+                Inventory
+            </MudText>
+
+            <MudNavLink Href="/inventory"
+                        Icon="@Icons.Material.Filled.Warehouse">
+                Stock
+            </MudNavLink>
+
+            <MudNavLink Href="/inventory/receiving"
+                        Icon="@Icons.Material.Filled.MoveToInbox">
+                Receiving
+            </MudNavLink>
+
+            <MudNavLink Href="/inventory/adjustments"
+                        Icon="@Icons.Material.Filled.Tune">
+                Adjustments
+            </MudNavLink>
+
+            <MudNavLink Href="/inventory/transfers"
+                        Icon="@Icons.Material.Filled.SwapHoriz">
+                Transfers
+            </MudNavLink>
+
+
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2">
+                Sales
+            </MudText>
+
+            <MudNavLink Href="/sales"
+                        Icon="@Icons.Material.Filled.PointOfSale">
+                Sales History
+            </MudNavLink>
+
+            <MudNavLink Href="/sales/returns"
+                        Icon="@Icons.Material.Filled.AssignmentReturn">
+                Returns
+            </MudNavLink>
+
+
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2">
+                Reports
+            </MudText>
+
+            <MudNavLink Href="/reports"
+                        Icon="@Icons.Material.Filled.BarChart">
+                Reports
+            </MudNavLink>
+
+
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2">
+                Administration
+            </MudText>
+
+            <MudNavLink Href="/devices"
+                        Icon="@Icons.Material.Filled.Devices">
+                Devices
+            </MudNavLink>
+
+            <MudNavLink Href="/audit"
+                        Icon="@Icons.Material.Filled.History">
+                Audit Logs
+            </MudNavLink>
+
+        </MudNavMenu>
+
+    </MudDrawer>
+
+
+    <!-- Main Content -->
+    <MudMainContent>
+
+        <MudContainer MaxWidth="MaxWidth.False"
+                      Class="pa-6">
+
+            @Body
+
+        </MudContainer>
+
+    </MudMainContent>
+</MudLayout>
+
+
+@code {
+
+    private readonly MudTheme _theme = new MudTheme()
+    {
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#6366F1",
+            Secondary = "#8B5CF6",
+
+            Background = "#0F1117",
+            Surface = "#151821",
+
+            DrawerBackground = "#11131A",
+            DrawerText = "#D1D5DB",
+
+            AppbarBackground = "#151821",
+            AppbarText = "#FFFFFF",
+
+            TextPrimary = "#F9FAFB",
+            TextSecondary = "#9CA3AF",
+
+            ActionDefault = "#9CA3AF",
+            Divider = "#252936"
+        }
+    };
+    private string GetUserName()
+    {
+        return AuthState.CurrentUser?.UserName
+               ?? "Guest";
+    }
+
+    private string GetInitial()
+    {
+        var userName = AuthState.CurrentUser?.UserName;
+
+        if (string.IsNullOrWhiteSpace(userName))
+            return "?";
+
+        return userName.Substring(0, 1).ToUpper();
+    }
+    private string GetUserRole()
+    {
+        return AuthState.CurrentUser?.Roles?.FirstOrDefault()
+               ?? "User";
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+
+        AuthState.NotifyAuthenticationStateChanged();
+
+        Navigation.NavigateTo("/login");
+    }
+
+
+}

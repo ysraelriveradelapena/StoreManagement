@@ -1,0 +1,37 @@
+﻿@using MudBlazor
+
+<MudStack Row="true"
+          AlignItems="AlignItems.Center"
+          Justify="Justify.SpaceBetween">
+
+    <MudStack Row="true"
+              AlignItems="AlignItems.Center"
+              Spacing="2">
+
+        <MudIcon Icon="@Icons.Material.Filled.Circle"
+                 Size="Size.Small"
+                 Color="Color.Success" />
+
+        <MudText Typo="Typo.body2">
+            @Name
+        </MudText>
+
+    </MudStack>
+
+    <MudText Typo="Typo.body2"
+             Color="Color.Success">
+        @Status
+    </MudText>
+
+</MudStack>
+
+
+@code {
+
+    [Parameter]
+    public string Name { get; set; } = "";
+
+    [Parameter]
+    public string Status { get; set; } = "";
+
+}

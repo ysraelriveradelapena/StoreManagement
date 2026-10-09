@@ -1,0 +1,276 @@
+﻿
+@page "/products"
+
+@using StoreManagement.Web.DTOs.Products
+@using StoreManagement.Web.Components.Dialogs.Products
+@using StoreManagement.Web.Services
+@using MudBlazor
+
+@inject ApiService ApiService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Spacing="3">
+        <MudStack Row="true"
+                  AlignItems="AlignItems.Center"
+                  Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.h4">Products</MudText>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddProduct">
+                Add Product
+            </MudButton>
+        </MudStack>
+
+        <MudTextField T="string"
+                      @bind-Value="_search"
+                      Placeholder="Search product code, name, brand, or category..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true"
+                      Clearable="true"
+                      Variant="Variant.Outlined" />
+
+        <MudCheckBox T="bool"
+                     @bind-Value="_showInactive"
+                     Label="Show inactive products"
+                     Color="Color.Primary" />
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudTable Items="@FilteredProducts"
+                      Hover="true"
+                      Striped="true"
+                      Dense="true">
+                <HeaderContent>
+                    <MudTh>Product Code</MudTh>
+                    <MudTh>Product Name</MudTh>
+                    <MudTh>Brand</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd DataLabel="Product Code">
+                        @context.ProductCode
+                    </MudTd>
+
+                    <MudTd DataLabel="Product Name">
+                        @context.Name
+                    </MudTd>
+
+                    <MudTd DataLabel="Brand">
+                        @(context.BrandName ?? "—")
+                    </MudTd>
+
+                    <MudTd DataLabel="Category">
+                        @(context.CategoryName ?? "—")
+                    </MudTd>
+
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@(context.IsActive
+                                                                      ? Color.Success
+                                                                      : Color.Default)">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </MudTd>
+
+                    <MudTd DataLabel="Actions">
+                        <MudStack Row="true" Spacing="1">
+                            <MudIconButton Icon="@Icons.Material.Filled.Layers"
+                                           Color="Color.Info"
+                                           Title="Manage variants"
+                                           OnClick="@(() => ManageVariants(context))" />
+
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Color="Color.Primary"
+                                           Title="Edit product"
+                                           OnClick="@(() => EditProduct(context))" />
+
+                            <MudIconButton Icon="@(context.IsActive
+                                                                           ? Icons.Material.Filled.Archive
+                                                                           : Icons.Material.Filled.Unarchive)"
+                                       Color="@(context.IsActive
+                                                                           ? Color.Error
+                                                                           : Color.Success)"
+                                       Title="@(context.IsActive
+                                                                           ? "Deactivate product"
+                                                                           : "Activate product")"
+                                       OnClick="@(() => ToggleStatus(context))" />
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+
+                <NoRecordsContent>
+                    <MudText Class="pa-4">No products found.</MudText>
+                </NoRecordsContent>
+
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+                }
+    </MudStack>
+</MudContainer>
+
+@code {
+    private List<ProductDto> _products = new();
+    private string _search = string.Empty;
+    private bool _showInactive;
+    private bool _loading = true;
+
+    private IEnumerable<ProductDto> FilteredProducts =>
+        _products.Where(x =>
+            (_showInactive || x.IsActive) &&
+            (string.IsNullOrWhiteSpace(_search) ||
+             x.ProductCode.Contains(
+                 _search, StringComparison.OrdinalIgnoreCase) ||
+             x.Name.Contains(
+                 _search, StringComparison.OrdinalIgnoreCase) ||
+             (x.BrandName?.Contains(
+                 _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+             (x.CategoryName?.Contains(
+                 _search, StringComparison.OrdinalIgnoreCase) ?? false)));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await AuthState.InitializeAsync();
+
+        if (string.IsNullOrWhiteSpace(AuthState.Token))
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadProducts();
+        StateHasChanged();
+    }
+
+    private async Task LoadProducts()
+    {
+        _loading = true;
+
+        try
+        {
+            var products = await ApiService.GetAsync<List<ProductDto>>(
+                "api/products?includeInactive=true");
+
+            _products = products ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Unable to load products: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ManageVariants(ProductDto product)
+    {
+        Navigation.NavigateTo($"/products/{product.Id}/variants");
+    }
+
+    private async Task AddProduct()
+    {
+        var parameters = new DialogParameters<ProductDialog>();
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ProductDialog>(
+            "Add Product",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+            await LoadProducts();
+    }
+
+    private async Task EditProduct(ProductDto product)
+    {
+        var parameters = new DialogParameters<ProductDialog>
+        {
+            { x => x.Product, product }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ProductDialog>(
+            "Edit Product",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+            await LoadProducts();
+    }
+
+    private async Task ToggleStatus(ProductDto product)
+    {
+        try
+        {
+            var response = await ApiService.PatchAsync(
+                $"api/products/{product.Id}/status",
+                new UpdateProductStatusRequest
+                {
+                    IsActive = !product.IsActive
+                });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(
+                    product.IsActive
+                        ? "Product deactivated."
+                        : "Product activated.",
+                    Severity.Success);
+
+                await LoadProducts();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Unable to update product status. {error}",
+                    Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"An error occurred: {ex.Message}",
+                Severity.Error);
+        }
+    }
+}

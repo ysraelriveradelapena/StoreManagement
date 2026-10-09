@@ -1,0 +1,54 @@
+﻿@using MudBlazor
+@using StoreManagement.Web.DTOs.Brands
+@namespace StoreManagement.Web.Components.Dialogs.Brands
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField T="string"
+                      Label="Brand Name"
+                      @bind-Value="_name"
+                      Required="true"
+                      RequiredError="Brand name is required."
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      MaxLength="100" />
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel"
+                   Variant="Variant.Text">
+            Cancel
+        </MudButton>
+
+        <MudButton OnClick="Save"
+                   Color="Color.Primary"
+                   Variant="Variant.Filled">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _name = "";
+
+    private void Save()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+            return;
+
+        MudDialog.Close(
+            DialogResult.Ok(
+                new CreateBrandRequest
+                {
+                    Name = _name.Trim()
+                }));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

@@ -1,0 +1,209 @@
+﻿@using StoreManagement.Web.DTOs.Products
+@using StoreManagement.Web.DTOs.Categories
+@using StoreManagement.Web.DTOs.Brands
+@using StoreManagement.Web.Services
+@using MudBlazor
+
+@inject ApiService ApiService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudStack Spacing="3">
+                <MudText Typo="Typo.h6">
+                    @(_isEdit ? "Edit Product" : "Add Product")
+                </MudText>
+
+                <MudTextField T="string"
+                              Label="Product Code"
+                              @bind-Value="_model.ProductCode"
+                              Required="true"
+                              RequiredError="Product code is required."
+                              MaxLength="50"
+                              Disabled="_saving" />
+
+                <MudTextField T="string"
+                              Label="Product Name"
+                              @bind-Value="_model.Name"
+                              Required="true"
+                              RequiredError="Product name is required."
+                              MaxLength="200"
+                              Disabled="_saving" />
+
+                <MudSelect T="int?"
+                           Label="Brand"
+                           @bind-Value="_model.BrandId"
+                           Clearable="true"
+                           Disabled="_saving || _loading">
+                    @foreach (var brand in _brands)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)brand.Id)">
+                            @brand.Name
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="int?"
+                           Label="Category"
+                           @bind-Value="_model.CategoryId"
+                           Clearable="true"
+                           Disabled="_saving || _loading">
+                    @foreach (var category in _categories)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)category.Id)">
+                            @category.Name
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (_loading)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                }
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_saving">
+            Cancel
+        </MudButton>
+
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Save"
+                   Disabled="_saving || _loading">
+            @(_saving ? "Saving..." : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public ProductDto? Product { get; set; }
+
+    private MudForm _form = default!;
+    private ProductRequest _model = new();
+
+    private List<BrandDto> _brands = new();
+    private List<CategoryDto> _categories = new();
+
+    private bool _isEdit;
+    private bool _loading = true;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isEdit = Product is not null;
+
+        if (Product is not null)
+        {
+            _model = new ProductRequest
+            {
+                ProductCode = Product.ProductCode,
+                Name = Product.Name,
+                BrandId = Product.BrandId,
+                CategoryId = Product.CategoryId
+            };
+        }
+
+        try
+        {
+            var brands = await ApiService.GetAsync<List<BrandDto>>(
+                "api/brands");
+
+            _brands = brands?
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.Name)
+                .ToList() ?? new();
+
+            var categories = await ApiService.GetAsync<List<CategoryDto>>(
+                "api/categories");
+
+            _categories = categories?
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.Name)
+                .ToList() ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Unable to load brands or categories: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+
+        if (!_form.IsValid)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_model.ProductCode) ||
+            string.IsNullOrWhiteSpace(_model.Name))
+        {
+            Snackbar.Add(
+                "Product code and name are required.",
+                Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            HttpResponseMessage response;
+
+            if (_isEdit)
+            {
+                response = await ApiService.PutAsync(
+                    $"api/products/{Product!.Id}",
+                    _model);
+            }
+            else
+            {
+                response = await ApiService.PostAsync(
+                    "api/products",
+                    _model);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(
+                    _isEdit ? "Product updated." : "Product created.",
+                    Severity.Success);
+
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Unable to save product. {error}",
+                    Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"An error occurred: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

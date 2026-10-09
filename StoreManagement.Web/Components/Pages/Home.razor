@@ -1,0 +1,427 @@
+﻿@page "/home"
+
+@using MudBlazor
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">
+    Dashboard
+</MudText>
+
+<MudText Typo="Typo.body1"
+         Color="Color.Secondary"
+         Class="mb-6">
+    Store Management overview
+</MudText>
+
+
+<!-- Summary Cards -->
+
+<MudGrid Spacing="3">
+
+    <!-- Stores -->
+    <MudItem xs="12" sm="6" md="3">
+
+        <MudPaper Elevation="1"
+                  Class="pa-4"
+                  Style="border-radius:12px;">
+
+            <MudStack Row="true"
+                      AlignItems="AlignItems.Center"
+                      Justify="Justify.SpaceBetween">
+
+                <div>
+
+                    <MudText Typo="Typo.body2"
+                             Color="Color.Secondary">
+                        Total Stores
+                    </MudText>
+
+                    <MudText Typo="Typo.h4"
+                             Class="mt-2">
+                        75
+                    </MudText>
+
+                    <MudText Typo="Typo.caption"
+                             Color="Color.Success">
+                        ● All active
+                    </MudText>
+
+                </div>
+
+                <MudAvatar Color="Color.Primary"
+                           Size="Size.Large">
+                    <MudIcon Icon="@Icons.Material.Filled.Store" />
+                </MudAvatar>
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+
+    <!-- Products -->
+    <MudItem xs="12" sm="6" md="3">
+
+        <MudPaper Elevation="1"
+                  Class="pa-4"
+                  Style="border-radius:12px;">
+
+            <MudStack Row="true"
+                      AlignItems="AlignItems.Center"
+                      Justify="Justify.SpaceBetween">
+
+                <div>
+
+                    <MudText Typo="Typo.body2"
+                             Color="Color.Secondary">
+                        Active SKUs
+                    </MudText>
+
+                    <MudText Typo="Typo.h4"
+                             Class="mt-2">
+                        12,458
+                    </MudText>
+
+                    <MudText Typo="Typo.caption"
+                             Color="Color.Success">
+                        ↑ 3.2% this month
+                    </MudText>
+
+                </div>
+
+                <MudAvatar Color="Color.Secondary"
+                           Size="Size.Large">
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" />
+                </MudAvatar>
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+
+    <!-- Inventory -->
+    <MudItem xs="12" sm="6" md="3">
+
+        <MudPaper Elevation="1"
+                  Class="pa-4"
+                  Style="border-radius:12px;">
+
+            <MudStack Row="true"
+                      AlignItems="AlignItems.Center"
+                      Justify="Justify.SpaceBetween">
+
+                <div>
+
+                    <MudText Typo="Typo.body2"
+                             Color="Color.Secondary">
+                        Inventory Value
+                    </MudText>
+
+                    <MudText Typo="Typo.h4"
+                             Class="mt-2">
+                        ₱8.42M
+                    </MudText>
+
+                    <MudText Typo="Typo.caption"
+                             Color="Color.Warning">
+                        28 low-stock items
+                    </MudText>
+
+                </div>
+
+                <MudAvatar Color="Color.Warning"
+                           Size="Size.Large">
+                    <MudIcon Icon="@Icons.Material.Filled.Warehouse" />
+                </MudAvatar>
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+
+    <!-- Sales -->
+    <MudItem xs="12" sm="6" md="3">
+
+        <MudPaper Elevation="1"
+                  Class="pa-4"
+                  Style="border-radius:12px;">
+
+            <MudStack Row="true"
+                      AlignItems="AlignItems.Center"
+                      Justify="Justify.SpaceBetween">
+
+                <div>
+
+                    <MudText Typo="Typo.body2"
+                             Color="Color.Secondary">
+                        Today's Sales
+                    </MudText>
+
+                    <MudText Typo="Typo.h4"
+                             Class="mt-2">
+                        ₱1.24M
+                    </MudText>
+
+                    <MudText Typo="Typo.caption"
+                             Color="Color.Success">
+                        ↑ 8.7% vs yesterday
+                    </MudText>
+
+                </div>
+
+                <MudAvatar Color="Color.Success"
+                           Size="Size.Large">
+                    <MudIcon Icon="@Icons.Material.Filled.PointOfSale" />
+                </MudAvatar>
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+</MudGrid>
+
+
+<!-- Second Row -->
+
+<MudGrid Spacing="3"
+         Class="mt-1">
+
+    <!-- Sales Overview -->
+
+    <MudItem xs="12"
+             md="8">
+
+        <MudPaper Elevation="1"
+                  Class="pa-5"
+                  Style="border-radius:12px;">
+
+            <MudStack Row="true"
+                      Justify="Justify.SpaceBetween"
+                      AlignItems="AlignItems.Center"
+                      Class="mb-4">
+
+                <div>
+
+                    <MudText Typo="Typo.h6">
+                        Sales Overview
+                    </MudText>
+
+                    <MudText Typo="Typo.body2"
+                             Color="Color.Secondary">
+                        Last 7 days
+                    </MudText>
+
+                </div>
+
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small">
+                    View Report
+                </MudButton>
+
+            </MudStack>
+
+
+            <!-- Simple visual bars -->
+
+            <MudStack Row="true"
+                      AlignItems="AlignItems.End"
+                      Justify="Justify.SpaceBetween"
+                      Style="height:220px;">
+
+                @foreach (var day in SalesData)
+                {
+                    <div style="flex:1;text-align:center;">
+
+                        <div style="
+                            height:@($"{day.Value}px");
+                            width:55%;
+                            margin:auto;
+                            background:#6366F1;
+                            border-radius:6px 6px 0 0;">
+                        </div>
+
+                        <MudText Typo="Typo.caption"
+                                 Class="mt-2">
+                            @day.Day
+                        </MudText>
+
+                    </div>
+                }
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+
+    <!-- System Status -->
+
+    <MudItem xs="12"
+             md="4">
+
+        <MudPaper Elevation="1"
+                  Class="pa-5"
+                  Style="border-radius:12px;">
+
+            <MudText Typo="Typo.h6"
+                     Class="mb-4">
+                System Status
+            </MudText>
+
+
+            <MudStack Spacing="3">
+
+                <StatusRow
+                    Name="API Server"
+                    Status="Online" />
+
+                <StatusRow
+                    Name="Database"
+                    Status="Online" />
+
+                <StatusRow
+                    Name="Mobile Sync"
+                    Status="Online" />
+
+                <StatusRow
+                    Name="Background Jobs"
+                    Status="Running" />
+
+            </MudStack>
+
+        </MudPaper>
+
+    </MudItem>
+
+</MudGrid>
+
+
+<!-- Recent Activity -->
+
+<MudPaper Elevation="1"
+          Class="pa-5 mt-4"
+          Style="border-radius:12px;">
+
+    <MudStack Row="true"
+              Justify="Justify.SpaceBetween"
+              AlignItems="AlignItems.Center"
+              Class="mb-4">
+
+        <div>
+
+            <MudText Typo="Typo.h6">
+                Recent Transactions
+            </MudText>
+
+            <MudText Typo="Typo.body2"
+                     Color="Color.Secondary">
+                Latest store activity
+            </MudText>
+
+        </div>
+
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Primary">
+            View All
+        </MudButton>
+
+    </MudStack>
+
+
+    <MudTable Items="@Transactions"
+              Hover="true"
+              Dense="true"
+              Elevation="0">
+
+        <HeaderContent>
+
+            <MudTh>Transaction</MudTh>
+            <MudTh>Store</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Date</MudTh>
+            <MudTh Align="Align.Right">Amount</MudTh>
+
+        </HeaderContent>
+
+        <RowTemplate>
+
+            <MudTd>
+                @context.Transaction
+            </MudTd>
+
+            <MudTd>
+                @context.Store
+            </MudTd>
+
+            <MudTd>
+
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Color="@(context.Type == "SALE"
+                                      ? Color.Success
+                                      : Color.Warning)">
+
+                    @context.Type
+
+                </MudChip>
+
+            </MudTd>
+
+            <MudTd>
+                @context.Date
+            </MudTd>
+
+            <MudTd Align="Align.Right">
+                ₱@context.Amount.ToString("N2")
+            </MudTd>
+
+        </RowTemplate>
+
+    </MudTable>
+
+</MudPaper>
+
+
+@code {
+
+    private List<SalesDay> SalesData = new()
+    {
+        new("Mon", 90),
+        new("Tue", 130),
+        new("Wed", 110),
+        new("Thu", 170),
+        new("Fri", 145),
+        new("Sat", 195),
+        new("Sun", 160)
+    };
+
+
+    private List<TransactionRow> Transactions = new()
+    {
+        new("TXN-20261008-00125", "Store 001", "SALE", "10:42 AM", 12540.00m),
+        new("TXN-20261008-00124", "Store 014", "SALE", "10:38 AM", 8320.50m),
+        new("TXN-20261008-00123", "Store 027", "RETURN", "10:31 AM", 1250.00m),
+        new("TXN-20261008-00122", "Store 003", "SALE", "10:25 AM", 18750.00m),
+        new("TXN-20261008-00121", "Store 041", "SALE", "10:18 AM", 6420.00m)
+    };
+
+
+    public record SalesDay(string Day, int Value);
+
+    public record TransactionRow(
+        string Transaction,
+        string Store,
+        string Type,
+        string Date,
+        decimal Amount);
+
+}

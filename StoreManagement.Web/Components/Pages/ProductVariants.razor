@@ -1,0 +1,359 @@
+﻿```razor
+@page "/products/{ProductId:int}/variants"
+
+@using MudBlazor
+@using StoreManagement.Web.DTOs.ProductVariants
+@using ProductVariantDto = StoreManagement.Web.DTOs.ProductVariants.ProductVariantDto
+@using StoreManagement.Web.DTOs.Products
+@using StoreManagement.Web.Services
+@using StoreManagement.Web.Components.Dialogs.ProductVariants
+
+@inject ApiService ApiService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4">
+
+        <MudStack Row="true"
+                  AlignItems="AlignItems.Center"
+                  Justify="Justify.SpaceBetween"
+                  Class="mb-4">
+
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.h5">Product Variants</MudText>
+
+                @if (_product is not null)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Product: @_product.Name (@_product.ProductCode)
+                    </MudText>
+                }
+            </MudStack>
+
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.ArrowBack"
+                           OnClick="BackToProducts">
+                    Back
+                </MudButton>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Disabled="@(_product is null || !_product.IsActive)"
+                           OnClick="AddVariant">
+                    Add Variant
+                </MudButton>
+            </MudStack>
+        </MudStack>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">
+                @_errorMessage
+            </MudAlert>
+        }
+
+        <MudTextField T="string"
+                      @bind-Value="_search"
+                      Placeholder="Search SKU, barcode, variant, size, or color..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true"
+                      Clearable="true"
+                      Class="mb-4" />
+
+        <MudTable Items="@FilteredVariants"
+                  Loading="_loading"
+                  Hover="true"
+                  Dense="true"
+                  Striped="true">
+
+            <HeaderContent>
+                <MudTh>SKU</MudTh>
+                <MudTh>Barcode</MudTh>
+                <MudTh>Variant</MudTh>
+                <MudTh>Size</MudTh>
+                <MudTh>Color</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Created At (UTC)</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+
+            <RowTemplate>
+                <MudTd DataLabel="SKU">@context.SKU</MudTd>
+                <MudTd DataLabel="Barcode">
+                    @(string.IsNullOrWhiteSpace(context.Barcode)
+                                        ? "-"
+                                        : context.Barcode)
+                </MudTd>
+                <MudTd DataLabel="Variant">
+                    @(string.IsNullOrWhiteSpace(context.VariantName)
+                                        ? "-"
+                                        : context.VariantName)
+                </MudTd>
+                <MudTd DataLabel="Size">
+                    @(string.IsNullOrWhiteSpace(context.Size)
+                                        ? "-"
+                                        : context.Size)
+                </MudTd>
+                <MudTd DataLabel="Color">
+                    @(string.IsNullOrWhiteSpace(context.Color)
+                                        ? "-"
+                                        : context.Color)
+                </MudTd>
+
+                <MudTd DataLabel="Status">
+                    <MudChip T="string"
+                             Color="@(context.IsActive ? Color.Success : Color.Default)"
+                             Size="Size.Small">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </MudTd>
+
+                <MudTd DataLabel="Created At (UTC)">
+                    @context.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")
+                </MudTd>
+
+                <MudTd DataLabel="Actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Title="Edit variant"
+                                   OnClick="@(() => EditVariant(context))" />
+
+                    <MudIconButton Icon="@Icons.Material.Filled.AttachMoney"
+                                   Color="Color.Success"
+                                   Size="Size.Small"
+                                   Title="Manage prices"
+                                   OnClick="@(() => ManagePrices(context))" />
+
+                    <MudIconButton Icon="@(context.IsActive
+                                                                            ? Icons.Material.Filled.Block
+                                                                            : Icons.Material.Filled.CheckCircle)"
+                                   Color="@(context.IsActive
+                                                                            ? Color.Error
+                                                                            : Color.Success)"
+                                   Size="Size.Small"
+                                   Title="@(context.IsActive
+                                                                            ? "Deactivate"
+                                                                            : "Activate")"
+                                   OnClick="@(() => ToggleStatus(context))" />
+                </MudTd>
+            </RowTemplate>
+
+            <NoRecordsContent>
+                <MudText Class="pa-4">
+                    No product variants found.
+                </MudText>
+            </NoRecordsContent>
+
+        </MudTable>
+
+        <MudButton Class="mt-4"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadVariants">
+            Refresh
+        </MudButton>
+
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter]
+    public int ProductId { get; set; }
+
+    private ProductDto? _product;
+    private List<ProductVariantDto> _variants = new();
+    private string _search = string.Empty;
+    private bool _loading;
+    private string? _errorMessage;
+
+    private IEnumerable<ProductVariantDto> FilteredVariants =>
+        _variants.Where(x =>
+            string.IsNullOrWhiteSpace(_search) ||
+            (x.SKU?.Contains(
+                _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (x.Barcode?.Contains(
+                _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (x.VariantName?.Contains(
+                _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (x.Size?.Contains(
+                _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (x.Color?.Contains(
+                _search, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await AuthState.InitializeAsync();
+
+        if (string.IsNullOrWhiteSpace(AuthState.Token))
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadProduct();
+        await LoadVariants();
+
+        StateHasChanged();
+    }
+
+    private async Task LoadProduct()
+    {
+        try
+        {
+            _product = await ApiService.GetAsync<ProductDto>(
+                $"api/products/{ProductId}");
+
+            if (_product is null)
+                _errorMessage = "Product not found.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load product: {ex.Message}";
+        }
+    }
+
+    private async Task LoadVariants()
+    {
+        try
+        {
+            _loading = true;
+            _errorMessage = null;
+
+            var result = await ApiService.GetAsync<List<ProductVariantDto>>(
+                $"api/product-variants?includeInactive=true&productId={ProductId}");
+
+            _variants = result ?? new List<ProductVariantDto>();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load product variants: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task AddVariant()
+    {
+        if (_product is null)
+            return;
+
+        var parameters = new DialogParameters<ProductVariantDialog>
+        {
+            { x => x.ProductId, ProductId },
+            { x => x.ProductName, _product.Name }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ProductVariantDialog>(
+            "Add Product Variant", parameters, options);
+
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+            await LoadVariants();
+    }
+
+    private async Task EditVariant(ProductVariantDto variant)
+    {
+        if (_product is null)
+            return;
+
+        var parameters = new DialogParameters<ProductVariantDialog>
+        {
+            { x => x.ProductId, ProductId },
+            { x => x.ProductName, _product.Name },
+            { x => x.Variant, variant }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ProductVariantDialog>(
+            "Edit Product Variant", parameters, options);
+
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+            await LoadVariants();
+    }
+
+    private void ManagePrices(ProductVariantDto variant)
+    {
+        Navigation.NavigateTo(
+            $"/products/variants/{variant.Id}/prices");
+    }
+
+    private async Task ToggleStatus(ProductVariantDto variant)
+    {
+        var newStatus = !variant.IsActive;
+        var action = newStatus ? "activate" : "deactivate";
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Are you sure you want to {action} SKU '{variant.SKU}'?");
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            var response = await ApiService.PatchAsync(
+                $"api/product-variants/{variant.Id}/status",
+                new UpdateProductVariantStatusRequest
+                {
+                    IsActive = newStatus
+                });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(
+                    $"Product variant {action}d successfully.",
+                    Severity.Success);
+
+                await LoadVariants();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Failed to change variant status: {error}",
+                    Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Failed to change variant status: {ex.Message}",
+                Severity.Error);
+        }
+    }
+
+    private void BackToProducts()
+    {
+        Navigation.NavigateTo("/products");
+    }
+}
+```

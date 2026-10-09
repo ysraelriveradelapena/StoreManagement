@@ -1,0 +1,225 @@
+﻿@page "/reason-codes"
+
+@using StoreManagement.Web.DTOs.ReasonCodes
+@using MudBlazor
+@using StoreManagement.Web.Services
+@using StoreManagement.Web.Components.Dialogs.ReasonCodes
+
+@inject ApiService ApiService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4">
+
+        <MudStack Row="true" AlignItems="AlignItems.Center"
+                  Justify="Justify.SpaceBetween" Class="mb-4">
+            <MudText Typo="Typo.h5">Reason Codes</MudText>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddReasonCode">
+                Add Reason Code
+            </MudButton>
+        </MudStack>
+
+        <MudTextField T="string"
+                      @bind-Value="_search"
+                      Placeholder="Search by code or name..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true"
+                      Clearable="true"
+                      Class="mb-4" />
+
+        <MudTable Items="@FilteredReasonCodes"
+                  Loading="_loading"
+                  Hover="true"
+                  Dense="true"
+                  Striped="true">
+
+            <HeaderContent>
+                <MudTh>Code</MudTh>
+                <MudTh>Name</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Created At (UTC)</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+
+            <RowTemplate>
+                <MudTd DataLabel="Code">@context.Code</MudTd>
+                <MudTd DataLabel="Name">@context.Name</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string"
+                             Color="@(context.IsActive ? Color.Success : Color.Default)"
+                             Size="Size.Small">
+                        @(context.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Created At">
+                    @context.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Title="Edit"
+                                   OnClick="@(() => EditReasonCode(context))" />
+
+                    <MudIconButton Icon="@(context.IsActive
+                                                               ? Icons.Material.Filled.Block
+                                                               : Icons.Material.Filled.CheckCircle)"
+                                   Color="@(context.IsActive ? Color.Error : Color.Success)"
+                                   Size="Size.Small"
+                                   Title="@(context.IsActive ? "Deactivate" : "Activate")"
+                                   OnClick="@(() => ToggleStatus(context))" />
+                </MudTd>
+            </RowTemplate>
+
+            <NoRecordsContent>
+                <MudText Class="pa-4">No reason codes found.</MudText>
+            </NoRecordsContent>
+
+        </MudTable>
+
+        <MudButton Class="mt-4"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadReasonCodes">
+            Refresh
+        </MudButton>
+
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<ReasonCodeDto> _reasonCodes = new();
+    private string _search = string.Empty;
+    private bool _loading;
+
+    private IEnumerable<ReasonCodeDto> FilteredReasonCodes =>
+        _reasonCodes.Where(x =>
+            string.IsNullOrWhiteSpace(_search) ||
+            x.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await AuthState.InitializeAsync();
+
+        if (string.IsNullOrWhiteSpace(AuthState.Token))
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadReasonCodes();
+        StateHasChanged();
+    }
+
+    private async Task LoadReasonCodes()
+    {
+        try
+        {
+            _loading = true;
+            var result = await ApiService.GetAsync<List<ReasonCodeDto>>(
+                "api/reason-codes?includeInactive=true");
+
+            _reasonCodes = result ?? new List<ReasonCodeDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load reason codes: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task AddReasonCode()
+    {
+        var parameters = new DialogParameters<ReasonCodeDialog>();
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ReasonCodeDialog>(
+            "Add Reason Code", parameters, options);
+
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+            await LoadReasonCodes();
+    }
+
+    private async Task EditReasonCode(ReasonCodeDto reasonCode)
+    {
+        var parameters = new DialogParameters<ReasonCodeDialog>
+        {
+            { x => x.ReasonCode, reasonCode }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ReasonCodeDialog>(
+            "Edit Reason Code", parameters, options);
+
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+            await LoadReasonCodes();
+    }
+
+    private async Task ToggleStatus(ReasonCodeDto reasonCode)
+    {
+        var newStatus = !reasonCode.IsActive;
+        var action = newStatus ? "activate" : "deactivate";
+
+        try
+        {
+            var response = await ApiService.PatchAsync(
+                $"api/reason-codes/{reasonCode.Id}/status",
+                new UpdateReasonCodeStatusRequest
+                {
+                    IsActive = newStatus
+                });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(
+                    $"Reason code {action}d successfully.",
+                    Severity.Success);
+
+                await LoadReasonCodes();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Failed to change status: {error}",
+                    Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Failed to change status: {ex.Message}",
+                Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,227 @@
+﻿
+@using MudBlazor
+@using StoreManagement.Web.DTOs.ProductVariantPrices
+@using StoreManagement.Web.Services
+
+@inject ApiService ApiService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudStack Spacing="3">
+
+                <MudText Typo="Typo.subtitle1">
+                    SKU: @SKU
+                </MudText>
+
+                @if (!string.IsNullOrWhiteSpace(VariantName))
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @VariantName
+                    </MudText>
+                }
+
+                <MudNumericField T="decimal"
+                                 Label="Price"
+                                 @bind-Value="_request.Price"
+                                 Required="true"
+                                 Min="0"
+                                 Variant="MudBlazor.Variant.Outlined"
+                                 Adornment="Adornment.Start"
+                                 AdornmentText="₱" />
+
+                <MudTextField T="string"
+                              Label="Price Type"
+                              @bind-Value="_request.PriceType"
+                              Required="true"
+                              Variant="MudBlazor.Variant.Outlined"
+                              Placeholder="REGULAR" />
+
+                <MudDatePicker Label="Effective From"
+                               Date="_effectiveFrom"
+                               DateChanged="OnEffectiveFromChanged"
+                               Required="true"
+                               Variant="MudBlazor.Variant.Outlined"
+                               Editable="true"
+                               DateFormat="yyyy-MM-dd" />
+
+                <MudDatePicker Label="Effective To (Optional)"
+                               Date="_effectiveTo"
+                               DateChanged="OnEffectiveToChanged"
+                               Clearable="true"
+                               Variant="MudBlazor.Variant.Outlined"
+                               Editable="true"
+                               DateFormat="yyyy-MM-dd" />
+
+                @if (!string.IsNullOrWhiteSpace(_errorMessage))
+                {
+                    <MudAlert Severity="Severity.Error">
+                        @_errorMessage
+                    </MudAlert>
+                }
+
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="MudBlazor.Variant.Text"
+                   OnClick="Cancel">
+            Cancel
+        </MudButton>
+
+        <MudButton Variant="MudBlazor.Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_saving"
+                   OnClick="Save">
+            @(_saving ? "Saving..." : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public int ProductVariantId { get; set; }
+
+    [Parameter]
+    public string SKU { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? VariantName { get; set; }
+
+    [Parameter]
+    public ProductVariantPriceDto? PriceRecord { get; set; }
+
+    private MudForm _form = null!;
+    private ProductVariantPriceRequest _request = new();
+
+    private DateTime? _effectiveFrom = DateTime.Today;
+    private DateTime? _effectiveTo;
+
+    private bool _saving;
+    private string? _errorMessage;
+
+    protected override void OnInitialized()
+    {
+        if (PriceRecord is not null)
+        {
+            _request = new ProductVariantPriceRequest
+            {
+                ProductVariantId = PriceRecord.ProductVariantId,
+                Price = PriceRecord.Price,
+                PriceType = PriceRecord.PriceType,
+                EffectiveFrom = PriceRecord.EffectiveFrom,
+                EffectiveTo = PriceRecord.EffectiveTo
+            };
+
+            _effectiveFrom = PriceRecord.EffectiveFrom;
+            _effectiveTo = PriceRecord.EffectiveTo;
+        }
+        else
+        {
+            _request.ProductVariantId = ProductVariantId;
+            _request.PriceType = "REGULAR";
+            _effectiveFrom = DateTime.Today;
+        }
+    }
+
+    private void OnEffectiveFromChanged(DateTime? value)
+    {
+        _effectiveFrom = value;
+    }
+
+    private void OnEffectiveToChanged(DateTime? value)
+    {
+        _effectiveTo = value;
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+
+        if (!_form.IsValid)
+            return;
+
+        if (!_effectiveFrom.HasValue)
+        {
+            _errorMessage = "Effective From is required.";
+            return;
+        }
+
+        if (_effectiveTo.HasValue &&
+            _effectiveTo.Value.Date < _effectiveFrom.Value.Date)
+        {
+            _errorMessage =
+                "Effective To cannot be earlier than Effective From.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_request.PriceType))
+        {
+            _errorMessage = "Price Type is required.";
+            return;
+        }
+
+        _request.ProductVariantId = ProductVariantId;
+        _request.PriceType = _request.PriceType.Trim();
+        _request.EffectiveFrom = _effectiveFrom.Value.Date;
+        _request.EffectiveTo = _effectiveTo?.Date;
+
+        try
+        {
+            _saving = true;
+            _errorMessage = null;
+
+            HttpResponseMessage response;
+
+            if (PriceRecord is not null)
+            {
+                response = await ApiService.PutAsync(
+                    $"api/product-variant-prices/{PriceRecord.Id}",
+                    _request);
+            }
+            else
+            {
+                response = await ApiService.PostAsync(
+                    "api/product-variant-prices",
+                    _request);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(
+                    PriceRecord is null
+                        ? "Price created successfully."
+                        : "Price updated successfully.",
+                    Severity.Success);
+
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else
+            {
+                _errorMessage =
+                    await response.Content.ReadAsStringAsync();
+
+                if (string.IsNullOrWhiteSpace(_errorMessage))
+                    _errorMessage = "Unable to save the price.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save price: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

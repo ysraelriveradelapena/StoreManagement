@@ -1,0 +1,188 @@
+﻿@using MudBlazor
+@using StoreManagement.Web.DTOs.Products
+@using StoreManagement.Web.Services
+
+@inject ApiService ApiService
+
+<MudDialog>
+
+    <DialogContent>
+
+        <MudText Typo="Typo.h6" Class="mb-4">
+            Add Item / SKU
+        </MudText>
+
+        <MudStack Spacing="3">
+
+            <MudSelect T="int"
+                       Label="Product"
+                       Variant="Variant.Outlined"
+                       @bind-Value="_model.ProductId"
+                       Required="true"
+                       Disabled="_loadingProducts">
+
+                @foreach (var product in Products)
+                {
+                    <MudSelectItem T="int"
+                                   Value="@product.Id">
+                        @product.ProductCode -
+                        @product.Name
+                    </MudSelectItem>
+                }
+
+            </MudSelect>
+
+            <MudTextField T="string"
+                          Label="SKU"
+                          Variant="Variant.Outlined"
+                          @bind-Value="_model.Sku"
+                          Required="true" />
+
+            <MudTextField T="string"
+                          Label="Barcode"
+                          Variant="Variant.Outlined"
+                          @bind-Value="_model.Barcode"
+                          Required="true" />
+
+            <MudTextField T="string"
+                          Label="Variant Name"
+                          Variant="Variant.Outlined"
+                          @bind-Value="_model.VariantName"
+                          Required="true" />
+
+            <MudTextField T="string"
+                          Label="Size"
+                          Variant="Variant.Outlined"
+                          @bind-Value="_model.Size" />
+
+            <MudTextField T="string"
+                          Label="Color"
+                          Variant="Variant.Outlined"
+                          @bind-Value="_model.Color" />
+
+        </MudStack>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error"
+                      Class="mt-4">
+                @_errorMessage
+            </MudAlert>
+        }
+
+    </DialogContent>
+
+    <DialogActions>
+
+        <MudButton OnClick="Cancel">
+            Cancel
+        </MudButton>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_saving"
+                   OnClick="Save">
+
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small"
+                                     Indeterminate="true"
+                                     Class="mr-2" />
+
+                <span>Saving...</span>
+            }
+            else
+            {
+                <span>Save</span>
+            }
+
+        </MudButton>
+
+    </DialogActions>
+
+</MudDialog>
+
+@code {
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public List<ProductDto> Products { get; set; } = new();
+
+    private CreateProductVariantRequest _model = new();
+
+    private bool _saving;
+
+    private bool _loadingProducts;
+
+    private string _errorMessage = "";
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Save()
+    {
+        if (_model.ProductId <= 0)
+        {
+            _errorMessage = "Please select a product.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_model.Sku))
+        {
+            _errorMessage = "SKU is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_model.Barcode))
+        {
+            _errorMessage = "Barcode is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_model.VariantName))
+        {
+            _errorMessage = "Variant Name is required.";
+            return;
+        }
+
+        _saving = true;
+        _errorMessage = "";
+
+        try
+        {
+            var response =
+                await ApiService.PostAsync(
+                    "api/product-variants",
+                    _model);
+
+            if (response.IsSuccessStatusCode)
+            {
+                MudDialog.Close(
+                    DialogResult.Ok(true));
+
+                return;
+            }
+
+            var error =
+                await response.Content.ReadAsStringAsync();
+
+            _errorMessage =
+                string.IsNullOrWhiteSpace(error)
+                    ? "Unable to save item."
+                    : error;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage =
+                $"Unable to save item: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

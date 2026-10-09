@@ -1,0 +1,104 @@
+﻿@using MudBlazor
+@using StoreManagement.Web.DTOs.Stores
+
+@namespace StoreManagement.Web.Components.Dialogs.Stores
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+
+            <MudTextField T="string"
+                          Label="Store Code"
+                          @bind-Value="_model.StoreCode"
+                          Required="true"
+                          RequiredError="Store code is required."
+                          MaxLength="50"
+                          Variant="Variant.Outlined" />
+
+            <MudTextField T="string"
+                          Label="Store Name"
+                          @bind-Value="_model.StoreName"
+                          Required="true"
+                          RequiredError="Store name is required."
+                          MaxLength="150"
+                          Variant="Variant.Outlined" />
+
+            <MudTextField T="string"
+                          Label="Department Store"
+                          @bind-Value="_model.DepartmentStore"
+                          MaxLength="100"
+                          Variant="Variant.Outlined" />
+
+            <MudTextField T="string"
+                          Label="Location"
+                          @bind-Value="_model.Location"
+                          MaxLength="100"
+                          Variant="Variant.Outlined" />
+
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel"
+                   Variant="Variant.Text">
+            Cancel
+        </MudButton>
+
+        <MudButton OnClick="Save"
+                   Color="Color.Primary"
+                   Variant="Variant.Filled">
+            @(Store is null ? "Save" : "Update")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public StoreDto? Store { get; set; }
+
+    private StoreRequest _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Store is not null)
+        {
+            _model = new StoreRequest
+            {
+                StoreCode = Store.StoreCode,
+                StoreName = Store.StoreName,
+                DepartmentStore = Store.DepartmentStore,
+                Location = Store.Location
+            };
+        }
+    }
+
+    private void Save()
+    {
+        if (string.IsNullOrWhiteSpace(_model.StoreCode) ||
+            string.IsNullOrWhiteSpace(_model.StoreName))
+        {
+            return;
+        }
+
+        _model.StoreCode = _model.StoreCode.Trim();
+        _model.StoreName = _model.StoreName.Trim();
+        _model.DepartmentStore =
+            string.IsNullOrWhiteSpace(_model.DepartmentStore)
+                ? null
+                : _model.DepartmentStore.Trim();
+        _model.Location =
+            string.IsNullOrWhiteSpace(_model.Location)
+                ? null
+                : _model.Location.Trim();
+
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

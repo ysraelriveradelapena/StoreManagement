@@ -1,0 +1,317 @@
+﻿
+@page "/items"
+@using MudBlazor
+@using StoreManagement.Web.Services
+@using StoreManagement.Web.DTOs.Products
+@using StoreManagement.Web.Components.Dialogs
+
+@inject ApiService ApiService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+
+<PageTitle>Items / SKUs</PageTitle>
+
+<MudStack Spacing="4">
+
+    <!-- Header -->
+
+    <MudStack Row="true"
+              AlignItems="AlignItems.Center"
+              Justify="Justify.SpaceBetween">
+
+        <div>
+
+            <MudText Typo="Typo.h4">
+                Items / SKUs
+            </MudText>
+
+            <MudText Typo="Typo.body2"
+                     Color="Color.Secondary">
+                Manage products and their variants
+            </MudText>
+
+        </div>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="OpenAddItemDialog">
+            Add Item
+        </MudButton>
+
+    </MudStack>
+
+
+    <!-- Search -->
+
+    <MudPaper Class="pa-4">
+
+        <MudTextField T="string"
+              Value="_searchText"
+              Label="Search"
+              Placeholder="Search by product, SKU, barcode..."
+              Variant="Variant.Outlined"
+              Adornment="Adornment.Start"
+              AdornmentIcon="@Icons.Material.Filled.Search"
+              Immediate="true" />
+
+    </MudPaper>
+
+
+    <!-- Loading -->
+
+    @if (_loading)
+    {
+        <MudPaper Class="pa-6">
+
+            <MudStack AlignItems="AlignItems.Center">
+
+                <MudProgressCircular Indeterminate="true"
+                                     Color="Color.Primary" />
+
+                <MudText>
+                    Loading items...
+                </MudText>
+
+            </MudStack>
+
+        </MudPaper>
+    }
+
+    <!-- Error -->
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error"
+                  Variant="Variant.Filled">
+
+            @_errorMessage
+
+        </MudAlert>
+    }
+
+    <!-- Items table -->
+
+    @if (!_loading && string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <MudPaper>
+
+            <MudTable Items="@FilteredItems"
+                      Hover="true"
+                      Dense="true"
+                      Striped="true"
+                      Loading="@_loading">
+
+                <HeaderContent>
+
+                    <MudTh>Product Code</MudTh>
+                    <MudTh>Product</MudTh>
+                    <MudTh>SKU</MudTh>
+                    <MudTh>Barcode</MudTh>
+                    <MudTh>Variant</MudTh>
+                    <MudTh>Size</MudTh>
+                    <MudTh>Color</MudTh>
+                    <MudTh>Status</MudTh>
+
+                </HeaderContent>
+
+                <RowTemplate>
+
+                    <MudTd DataLabel="Product Code">
+                        @context.ProductCode
+                    </MudTd>
+
+                    <MudTd DataLabel="Product">
+                        @context.ProductName
+                    </MudTd>
+
+                    <MudTd DataLabel="SKU">
+                        @context.Sku
+                    </MudTd>
+
+                    <MudTd DataLabel="Barcode">
+                        @context.Barcode
+                    </MudTd>
+
+                    <MudTd DataLabel="Variant">
+                        @context.VariantName
+                    </MudTd>
+
+                    <MudTd DataLabel="Size">
+                        @(context.Size ?? "-")
+                    </MudTd>
+
+                    <MudTd DataLabel="Color">
+                        @(context.Color ?? "-")
+                    </MudTd>
+
+                    <MudTd DataLabel="Status">
+
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="Color.Success">
+                                Active
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="Color.Error">
+                                Inactive
+                            </MudChip>
+                        }
+
+                    </MudTd>
+
+                </RowTemplate>
+
+                <NoRecordsContent>
+
+                    <MudText Class="pa-4">
+                        No items found.
+                    </MudText>
+
+                </NoRecordsContent>
+
+            </MudTable>
+
+        </MudPaper>
+    }
+
+</MudStack>
+
+
+@code
+{
+    private List<ProductVariantDto> _items = new();
+
+    private string _searchText = "";
+
+    private bool _loading = true;
+
+    private string _errorMessage = "";
+    private List<ProductDto> _products = new();
+
+    private bool _loadingProducts;
+
+
+    private IEnumerable<ProductVariantDto> FilteredItems =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _items
+            : _items.Where(x =>
+                x.ProductCode.Contains(
+                    _searchText,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                x.ProductName.Contains(
+                    _searchText,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                x.Sku.Contains(
+                    _searchText,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                x.Barcode.Contains(
+                    _searchText,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                x.VariantName.Contains(
+                    _searchText,
+                    StringComparison.OrdinalIgnoreCase));
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadItemsAsync();
+        await LoadProductsAsync();
+    }
+
+
+    private async Task LoadItemsAsync()
+    {
+        _loading = true;
+        _errorMessage = "";
+
+        try
+        {
+            var result =
+                await ApiService.GetAsync<List<ProductVariantDto>>(
+                    "api/product-variants");
+
+            _items = result ?? new List<ProductVariantDto>();
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage =
+                $"Unable to load items: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage =
+                $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+    private async Task OpenAddItemDialog()
+    {
+        var parameters = new DialogParameters
+    {
+        { "Products", _products }
+    };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog =
+            await DialogService.ShowAsync<AddItemDialog>(
+                "Add Item",
+                parameters,
+                options);
+
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadItemsAsync();
+        }
+    }
+    private async Task LoadProductsAsync()
+    {
+        _loadingProducts = true;
+
+        try
+        {
+            var result =
+                await ApiService.GetAsync<List<ProductDto>>(
+                    "api/products");
+
+            _products = result ?? new List<ProductDto>();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage =
+                $"Unable to load products: {ex.Message}";
+        }
+        finally
+        {
+            _loadingProducts = false;
+        }
+    }
+}

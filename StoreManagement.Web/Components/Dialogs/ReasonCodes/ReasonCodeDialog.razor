@@ -1,0 +1,113 @@
+﻿@using StoreManagement.Web.Services
+@using StoreManagement.Web.DTOs.ReasonCodes
+@using MudBlazor
+
+@inject ApiService ApiService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        @(IsEdit ? "Edit Reason Code" : "Add Reason Code")
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField T="string"
+                          Label="Code"
+                          @bind-Value="_request.Code"
+                          Required="true"
+                          RequiredError="Code is required."
+                          MaxLength="30"
+                          Disabled="@IsEdit" />
+
+            <MudTextField T="string"
+                          Label="Name"
+                          @bind-Value="_request.Name"
+                          Required="true"
+                          RequiredError="Name is required."
+                          MaxLength="100"
+                          Class="mt-3" />
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Save">
+            @(IsEdit ? "Save Changes" : "Add Reason Code")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialogInstance { get; set; } = default!;
+
+    [Parameter]
+    public ReasonCodeDto? ReasonCode { get; set; }
+
+    private MudForm _form = default!;
+    private ReasonCodeRequest _request = new();
+
+    private bool IsEdit => ReasonCode is not null;
+
+    protected override void OnInitialized()
+    {
+        if (ReasonCode is not null)
+        {
+            _request = new ReasonCodeRequest
+            {
+                Code = ReasonCode.Code,
+                Name = ReasonCode.Name
+            };
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialogInstance.Cancel();
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+
+        if (!_form.IsValid)
+            return;
+
+        HttpResponseMessage response;
+
+        if (IsEdit)
+        {
+            response = await ApiService.PutAsync(
+                $"api/reason-codes/{ReasonCode!.Id}",
+                _request);
+        }
+        else
+        {
+            response = await ApiService.PostAsync(
+                "api/reason-codes",
+                _request);
+        }
+
+        if (response.IsSuccessStatusCode)
+        {
+            Snackbar.Add(
+                IsEdit
+                    ? "Reason code updated successfully."
+                    : "Reason code added successfully.",
+                Severity.Success);
+
+            MudDialogInstance.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+            var error = await response.Content.ReadAsStringAsync();
+
+            Snackbar.Add(
+                $"Unable to save reason code. {error}",
+                Severity.Error);
+        }
+    }
+}
