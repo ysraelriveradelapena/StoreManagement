@@ -2,15 +2,19 @@
 @implements IAsyncDisposable
 
 @using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.SignalR.Client
 @using MudBlazor
 @using StoreManagement.Web.Services
 @using StoreManagement.Web.DTOs.Devices
+@using System.Net
 
 @inject AuthService AuthService
 @inject AuthState AuthState
 @inject ApiService ApiService
 @inject NavigationManager Navigation
+@inject IConfiguration Configuration
 @inject ILogger<MainLayout> Logger
+@inject ISnackbar Snackbar
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
 
@@ -31,19 +35,20 @@
 
         <MudSpacer />
 
-        <MudBadge Content="@_pendingDeviceRequests"
-                  Color="Color.Error"
-                  Visible="@(_pendingDeviceRequests > 0)"
-                  Overlap="true">
+        @if (IsSystemAdmin)
+        {
+            <MudBadge Content="@_pendingDeviceRequests"
+                      Color="Color.Error"
+                      Visible="@(_pendingDeviceRequests > 0)"
+                      Overlap="true">
+                <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                               Color="Color.Inherit"
+                               Title="@GetNotificationTitle()"
+                               OnClick="OpenDeviceRegistrationRequests" />
+            </MudBadge>
 
-            <MudIconButton Icon="@Icons.Material.Filled.Notifications"
-                           Color="Color.Inherit"
-                           Title="@GetNotificationTitle()"
-                           OnClick="OpenDeviceRegistrationRequests" />
-
-        </MudBadge>
-
-        <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+            <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+        }
 
         <MudMenu Icon="@Icons.Material.Filled.AccountCircle"
                  Color="Color.Inherit"
@@ -51,10 +56,7 @@
                  TransformOrigin="Origin.TopRight">
 
             <MudMenuItem Disabled="true">
-                <MudText Typo="Typo.body2">
-                    @GetUserName()
-                </MudText>
-
+                <MudText Typo="Typo.body2">@GetUserName()</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
                     @GetUserRole()
                 </MudText>
@@ -100,23 +102,19 @@
                 CATALOG
             </MudText>
 
-            <MudNavLink Href="/products"
-                        Icon="@Icons.Material.Filled.Inventory2">
+            <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory2">
                 Products
             </MudNavLink>
 
-            <MudNavLink Href="/brands"
-                        Icon="@Icons.Material.Filled.Category">
+            <MudNavLink Href="/brands" Icon="@Icons.Material.Filled.Category">
                 Brands
             </MudNavLink>
 
-            <MudNavLink Href="/categories"
-                        Icon="@Icons.Material.Filled.Folder">
+            <MudNavLink Href="/categories" Icon="@Icons.Material.Filled.Folder">
                 Categories
             </MudNavLink>
 
-            <MudNavLink Href="/reason-codes"
-                        Icon="@Icons.Material.Filled.Rule">
+            <MudNavLink Href="/reason-codes" Icon="@Icons.Material.Filled.Rule">
                 Reason Codes
             </MudNavLink>
 
@@ -128,23 +126,19 @@
                 INVENTORY
             </MudText>
 
-            <MudNavLink Href="/inventory"
-                        Icon="@Icons.Material.Filled.Warehouse">
+            <MudNavLink Href="/inventory" Icon="@Icons.Material.Filled.Warehouse">
                 Inventory
             </MudNavLink>
 
-            <MudNavLink Href="/receiving"
-                        Icon="@Icons.Material.Filled.MoveToInbox">
+            <MudNavLink Href="/receiving" Icon="@Icons.Material.Filled.MoveToInbox">
                 Receiving
             </MudNavLink>
 
-            <MudNavLink Href="/adjustments"
-                        Icon="@Icons.Material.Filled.Tune">
+            <MudNavLink Href="/adjustments" Icon="@Icons.Material.Filled.Tune">
                 Adjustments
             </MudNavLink>
 
-            <MudNavLink Href="/transfers"
-                        Icon="@Icons.Material.Filled.SwapHoriz">
+            <MudNavLink Href="/transfers" Icon="@Icons.Material.Filled.SwapHoriz">
                 Transfers
             </MudNavLink>
 
@@ -156,13 +150,11 @@
                 SALES
             </MudText>
 
-            <MudNavLink Href="/sales"
-                        Icon="@Icons.Material.Filled.PointOfSale">
+            <MudNavLink Href="/sales" Icon="@Icons.Material.Filled.PointOfSale">
                 Sales
             </MudNavLink>
 
-            <MudNavLink Href="/returns"
-                        Icon="@Icons.Material.Filled.AssignmentReturn">
+            <MudNavLink Href="/returns" Icon="@Icons.Material.Filled.AssignmentReturn">
                 Returns
             </MudNavLink>
 
@@ -174,13 +166,11 @@
                 REPORTS
             </MudText>
 
-            <MudNavLink Href="/reports"
-                        Icon="@Icons.Material.Filled.Assessment">
+            <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.Assessment">
                 Reports
             </MudNavLink>
 
-            <MudNavLink Href="/audit"
-                        Icon="@Icons.Material.Filled.History">
+            <MudNavLink Href="/audit" Icon="@Icons.Material.Filled.History">
                 Audit
             </MudNavLink>
 
@@ -192,47 +182,47 @@
                 ADMINISTRATION
             </MudText>
 
-            <MudNavLink Href="/users"
-                        Icon="@Icons.Material.Filled.People">
+            <MudNavLink Href="/users" Icon="@Icons.Material.Filled.People">
                 Users
             </MudNavLink>
 
-            <MudNavLink Href="/stores"
-                        Icon="@Icons.Material.Filled.Store">
+            <MudNavLink Href="/stores" Icon="@Icons.Material.Filled.Store">
                 Stores
             </MudNavLink>
 
-            <MudNavLink Href="/devices"
-                        Icon="@Icons.Material.Filled.Devices">
+            <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.Devices">
                 Devices
             </MudNavLink>
 
-            <MudNavLink Href="/device-registration-requests"
-                        Match="NavLinkMatch.Prefix"
-                        Icon="@Icons.Material.Filled.Approval">
+            @if (IsSystemAdmin)
+            {
+                <MudNavLink Href="/device-registration-requests"
+                            Match="NavLinkMatch.Prefix"
+                            Icon="@Icons.Material.Filled.Approval">
 
-                <MudStack Row="true"
-                          AlignItems="AlignItems.Center"
-                          Justify="Justify.SpaceBetween"
-                          Spacing="2">
+                    <MudStack Row="true"
+                              AlignItems="AlignItems.Center"
+                              Justify="Justify.SpaceBetween"
+                              Spacing="2">
 
-                    <MudText Typo="Typo.body2">
-                        Device Registration Requests
-                    </MudText>
+                        <MudText Typo="Typo.body2">
+                            Device Registration Requests
+                        </MudText>
 
-                    @if (_pendingDeviceRequests > 0)
-                    {
-                        <MudChip T="string"
-                                 Size="Size.Small"
-                                 Color="Color.Error"
-                                 Variant="Variant.Filled">
-                            @_pendingDeviceRequests
-                        </MudChip>
-                    }
+                        @if (_pendingDeviceRequests > 0)
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="Color.Error"
+                                     Variant="Variant.Filled">
+                                @_pendingDeviceRequests
+                            </MudChip>
+                        }
 
-                </MudStack>
+                    </MudStack>
 
-            </MudNavLink>
+                </MudNavLink>
+            }
 
         </MudNavMenu>
 
@@ -248,12 +238,17 @@
 
 @code {
     private bool _drawerOpen = true;
-
     private int _pendingDeviceRequests;
+    private HubConnection? _hubConnection;
+    private bool _disposed;
+    private bool _authorizationMessageShown;
 
-    private readonly CancellationTokenSource _pollingCancellation = new();
-
-    private Task? _pollingTask;
+    private bool IsSystemAdmin =>
+        AuthService.CurrentUser?.Roles?.Any(
+            role => string.Equals(
+                role,
+                "SystemAdmin",
+                StringComparison.OrdinalIgnoreCase)) == true;
 
     private readonly MudTheme _theme = new()
     {
@@ -274,70 +269,202 @@
         }
     };
 
-    protected override async Task OnInitializedAsync()
-    {
-        await RefreshPendingDeviceRequestsAsync();
 
-        _pollingTask = PollPendingDeviceRequestsAsync();
+    protected override Task OnInitializedAsync()
+    {
+        // Do not access ProtectedSessionStorage here.
+        // JavaScript interop is unavailable during static prerendering.
+        return Task.CompletedTask;
     }
 
-    private async Task PollPendingDeviceRequestsAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender)
+            return;
+
         try
         {
-            using var timer = new PeriodicTimer(
-                TimeSpan.FromSeconds(30));
+            await AuthService.InitializeAsync();
 
-            while (await timer.WaitForNextTickAsync(
-                _pollingCancellation.Token))
+            if (!AuthService.IsLoggedIn)
             {
-                await RefreshPendingDeviceRequestsAsync();
+                return;
+            }
+
+            if (!IsSystemAdmin)
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            await RefreshPendingDeviceRequestsAsync();
+            await ConnectToNotificationHubAsync();
+
+            if (!_disposed)
+            {
+                await InvokeAsync(StateHasChanged);
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            // Normal when the layout is disposed.
+            Logger.LogError(
+                ex,
+                "Failed to initialize the application layout.");
+
+            if (!_disposed)
+            {
+                Snackbar.Add(
+                    "Unable to initialize your session. Please refresh the page.",
+                    Severity.Error);
+            }
+        }
+    }
+
+
+    private async Task ConnectToNotificationHubAsync()
+    {
+        if (_disposed || !IsSystemAdmin)
+            return;
+
+        try
+        {
+            var apiBaseUrl = Configuration["ApiBaseUrl"];
+
+            if (string.IsNullOrWhiteSpace(apiBaseUrl))
+            {
+                Logger.LogWarning("SignalR skipped: ApiBaseUrl is missing.");
+                return;
+            }
+
+            var hubUrl = new Uri(
+                new Uri(apiBaseUrl),
+                "hubs/device-notifications").ToString();
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUrl, options =>
+                {
+                    options.AccessTokenProvider = async () =>
+                    {
+                        await AuthService.InitializeAsync();
+                        return AuthService.Token;
+                    };
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.On(
+                "DeviceRegistrationRequestsChanged",
+                async () =>
+                {
+                    if (!_disposed && IsSystemAdmin)
+                        await RefreshPendingDeviceRequestsAsync();
+                });
+
+            _hubConnection.Reconnecting += exception =>
+            {
+                Logger.LogWarning(exception, "SignalR is reconnecting.");
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Reconnected += async connectionId =>
+            {
+                Logger.LogInformation(
+                    "SignalR reconnected. ConnectionId: {ConnectionId}",
+                    connectionId);
+
+                await RefreshPendingDeviceRequestsAsync();
+            };
+
+            _hubConnection.Closed += exception =>
+            {
+                if (exception is not null)
+                    Logger.LogWarning(exception, "SignalR connection closed.");
+
+                return Task.CompletedTask;
+            };
+
+            await _hubConnection.StartAsync();
+
+            Logger.LogInformation("Connected to the device notification hub.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unable to connect to the device notification hub.");
+
+            if (!_disposed)
+            {
+                await InvokeAsync(() =>
+                    Snackbar.Add(
+                        "Live notifications are temporarily unavailable.",
+                        Severity.Warning));
+            }
         }
     }
 
     private async Task RefreshPendingDeviceRequestsAsync()
     {
+        if (_disposed || !AuthService.IsLoggedIn || !IsSystemAdmin)
+            return;
+
         try
         {
             var requests =
                 await ApiService.GetAsync<List<DeviceRegistrationRequestDto>>(
                     "api/device-registration-requests?status=Pending");
 
-            var newCount = requests?.Count ?? 0;
+            if (_disposed)
+                return;
 
-            if (newCount != _pendingDeviceRequests)
-            {
-                _pendingDeviceRequests = newCount;
+            _pendingDeviceRequests = requests?.Count ?? 0;
 
-                await InvokeAsync(StateHasChanged);
-            }
+            await InvokeAsync(StateHasChanged);
         }
-        catch (OperationCanceledException)
-        {
-            // Ignore cancellation during shutdown.
-        }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
+            when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
             Logger.LogWarning(
                 ex,
-                "Unable to refresh pending device registration requests.");
+                "The user is not authorized to view device registration requests.");
+
+            if (!_authorizationMessageShown && !_disposed)
+            {
+                _authorizationMessageShown = true;
+
+                await InvokeAsync(() =>
+                    Snackbar.Add(
+                        "You don't have permission to view device registration requests.",
+                        Severity.Warning));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to refresh device registration requests.");
+
+            if (!_disposed)
+            {
+                await InvokeAsync(() =>
+                    Snackbar.Add(
+                        "Unable to refresh device notifications. Please try again later.",
+                        Severity.Warning));
+            }
         }
     }
 
-    private string GetNotificationTitle()
-    {
-        return _pendingDeviceRequests == 1
+    private string GetNotificationTitle() =>
+        _pendingDeviceRequests == 1
             ? "1 pending device registration request"
             : $"{_pendingDeviceRequests} pending device registration requests";
-    }
 
     private void OpenDeviceRegistrationRequests()
     {
+        if (!IsSystemAdmin)
+        {
+            Snackbar.Add(
+                "You don't have permission to view device registration requests.",
+                Severity.Warning);
+            return;
+        }
+
         Navigation.NavigateTo("/device-registration-requests");
     }
 
@@ -346,34 +473,33 @@
         _drawerOpen = !_drawerOpen;
     }
 
-    private string GetUserName()
-    {
-        return AuthState.CurrentUser?.UserName ?? "Guest";
-    }
+    private string GetUserName() =>
+        AuthService.CurrentUser?.UserName ?? "Guest";
 
-    private string GetUserRole()
-    {
-        return AuthState.CurrentUser?.Roles?.FirstOrDefault() ?? "User";
-    }
+    private string GetUserRole() =>
+        AuthService.CurrentUser?.Roles?.FirstOrDefault() ?? "User";
 
     private async Task Logout()
     {
         await AuthService.LogoutAsync();
-
         AuthState.NotifyAuthenticationStateChanged();
-
         Navigation.NavigateTo("/login");
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _pollingCancellation.CancelAsync();
+        _disposed = true;
 
-        if (_pollingTask is not null)
+        if (_hubConnection is not null)
         {
-            await _pollingTask;
+            try
+            {
+                await _hubConnection.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Error disposing SignalR connection.");
+            }
         }
-
-        _pollingCancellation.Dispose();
     }
 }

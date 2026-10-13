@@ -4,9 +4,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
 using StoreManagement.Api.DTOs.Devices;
+using StoreManagement.Api.Hubs;
 using StoreManagement.Api.Models;
 using StoreManagement.Api.Models.Identity;
 using StoreManagement.Api.Services.Devices;
@@ -20,18 +22,50 @@ public class DeviceRegistrationRequestsController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IHubContext<DeviceNotificationHub> _hubContext;
+    private readonly ILogger<DeviceRegistrationRequestsController> _logger;
 
     public DeviceRegistrationRequestsController(
         ApplicationDbContext db,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IHubContext<DeviceNotificationHub> hubContext,
+        ILogger<DeviceRegistrationRequestsController> logger)
     {
         _db = db;
         _userManager = userManager;
+        _hubContext = hubContext;
+        _logger = logger;
     }
 
     private string? CurrentUserId =>
         User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? User.FindFirstValue("sub");
+
+    // ------------------------------------------------------------
+    // SIGNALR NOTIFICATION
+    // ------------------------------------------------------------
+
+    private async Task NotifyAdminsAsync()
+    {
+        try
+        {
+            await _hubContext.Clients
+                .Group(DeviceNotificationHub.SystemAdminsGroup)
+                .SendAsync("DeviceRegistrationRequestsChanged");
+        }
+        catch (Exception ex)
+        {
+            // A notification failure must not undo a successful
+            // registration, approval, or rejection.
+            _logger.LogError(
+                ex,
+                "Failed to send device registration notification.");
+        }
+    }
+
+    // ------------------------------------------------------------
+    // SUBMIT REGISTRATION REQUEST
+    // ------------------------------------------------------------
 
     [HttpPost]
     public async Task<IActionResult> Submit(
@@ -102,6 +136,9 @@ public class DeviceRegistrationRequestsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        // Notify connected System Admins immediately.
+        await NotifyAdminsAsync();
+
         return Ok(new
         {
             registration.Id,
@@ -114,6 +151,9 @@ public class DeviceRegistrationRequestsController : ControllerBase
         });
     }
 
+    // ------------------------------------------------------------
+    // GET REGISTRATION REQUESTS
+    // ------------------------------------------------------------
 
     [HttpGet]
     [Authorize(Roles = "SystemAdmin")]
@@ -159,6 +199,9 @@ public class DeviceRegistrationRequestsController : ControllerBase
         return Ok(result);
     }
 
+    // ------------------------------------------------------------
+    // APPROVE REGISTRATION REQUEST
+    // ------------------------------------------------------------
 
     [HttpPost("{id:int}/approve")]
     [Authorize(Roles = "SystemAdmin")]
@@ -233,6 +276,9 @@ public class DeviceRegistrationRequestsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        // Update the pending-request count for connected admins.
+        await NotifyAdminsAsync();
+
         return Ok(new
         {
             requestId = registration.Id,
@@ -242,6 +288,10 @@ public class DeviceRegistrationRequestsController : ControllerBase
             message = "Device approved. Save the secret securely."
         });
     }
+
+    // ------------------------------------------------------------
+    // REJECT REGISTRATION REQUEST
+    // ------------------------------------------------------------
 
     [HttpPost("{id:int}/reject")]
     [Authorize(Roles = "SystemAdmin")]
@@ -282,6 +332,9 @@ public class DeviceRegistrationRequestsController : ControllerBase
         });
 
         await _db.SaveChangesAsync();
+
+        // Update the pending-request count for connected admins.
+        await NotifyAdminsAsync();
 
         return Ok(new
         {

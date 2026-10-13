@@ -1,4 +1,7 @@
-﻿@using MudBlazor
+﻿```razor
+@using System.Net
+@using System.Text.Json
+@using MudBlazor
 @using StoreManagement.Web.DTOs.Devices
 @using StoreManagement.Web.DTOs.Stores
 @using StoreManagement.Web.Services
@@ -47,12 +50,15 @@
     </DialogContent>
 
     <DialogActions>
-        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton OnClick="Cancel"
+                   Disabled="@_saving">
+            Cancel
+        </MudButton>
 
         <MudButton Color="Color.Primary"
                    Variant="Variant.Filled"
                    OnClick="Save"
-                   Disabled="_saving">
+                   Disabled="@_saving">
             @(_saving ? "Saving..." : IsEdit ? "Save Changes" : "Add Device")
         </MudButton>
     </DialogActions>
@@ -142,20 +148,34 @@
                     Severity.Success);
 
                 MudDialogInstance.Close(DialogResult.Ok(true));
+                return;
             }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
 
-                Snackbar.Add(
-                    $"Unable to save device. {error}",
-                    Severity.Error);
-            }
+            var responseBody =
+                await response.Content.ReadAsStringAsync();
+
+            var errorMessage = FormatApiError(
+                response.StatusCode,
+                responseBody);
+
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            Snackbar.Add(
+                $"Unable to connect to the API: {ex.Message}",
+                Severity.Error);
+        }
+        catch (TaskCanceledException)
+        {
+            Snackbar.Add(
+                "The request timed out while saving the device. Please try again.",
+                Severity.Error);
         }
         catch (Exception ex)
         {
             Snackbar.Add(
-                $"Unable to save device: {ex.Message}",
+                $"Unexpected error while saving the device: {ex.Message}",
                 Severity.Error);
         }
         finally
@@ -163,4 +183,74 @@
             _saving = false;
         }
     }
+
+    private static string FormatApiError(
+        HttpStatusCode statusCode,
+        string responseBody)
+    {
+        var status = (int)statusCode;
+        var body = responseBody?.Trim();
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return statusCode switch
+            {
+                HttpStatusCode.Forbidden =>
+                    "Unable to save device (403 Forbidden). Your account may not have permission to register devices.",
+
+                HttpStatusCode.Unauthorized =>
+                    "Unable to save device (401 Unauthorized). Please sign in again.",
+
+                HttpStatusCode.BadRequest =>
+                    "Unable to save device (400 Bad Request). Check the submitted device details.",
+
+                HttpStatusCode.Conflict =>
+                    "Unable to save device (409 Conflict). The device code may already exist.",
+
+                _ =>
+                    $"Unable to save device (HTTP {status} {statusCode}). The API returned no error details."
+            };
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("message", out var message) &&
+                    message.ValueKind == JsonValueKind.String)
+                {
+                    return $"Unable to save device (HTTP {status}): {message.GetString()}";
+                }
+
+                if (root.TryGetProperty("title", out var title) &&
+                    title.ValueKind == JsonValueKind.String)
+                {
+                    var titleText = title.GetString();
+
+                    if (root.TryGetProperty("errors", out var errors))
+                    {
+                        return $"Unable to save device (HTTP {status}): {titleText}. {errors}";
+                    }
+
+                    return $"Unable to save device (HTTP {status}): {titleText}";
+                }
+
+                if (root.TryGetProperty("detail", out var detail) &&
+                    detail.ValueKind == JsonValueKind.String)
+                {
+                    return $"Unable to save device (HTTP {status}): {detail.GetString()}";
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // The response is plain text rather than JSON.
+        }
+
+        return $"Unable to save device (HTTP {status}): {body}";
+    }
 }
+```

@@ -1,10 +1,12 @@
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using StoreManagement.Api.Data;
+using StoreManagement.Api.Hubs;
 using StoreManagement.Api.Models.Identity;
 using StoreManagement.Api.Services.Authentication;
 using StoreManagement.Api.Services.Inventory;
@@ -121,6 +123,31 @@ builder.Services
                 ClockSkew = TimeSpan.FromMinutes(1),
                 RoleClaimType = "role"
             };
+
+        // SignalR WebSocket connections may send the JWT
+        // through the access_token query string.
+        // Only accept that query-string token for our hub.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var requestPath = context.HttpContext.Request.Path;
+
+                if (requestPath.StartsWithSegments(
+                    "/hubs/device-notifications"))
+                {
+                    var accessToken =
+                        context.Request.Query["access_token"];
+
+                    if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        context.Token = accessToken;
+                    }
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     })
     .AddJwtBearer("DeviceBearer", options =>
     {
@@ -199,6 +226,12 @@ builder.Services.AddAuthorization(options =>
         policy.RequireClaim("device_access", "true");
     });
 });
+
+// ------------------------------------------------------------
+// SIGNALR
+// ------------------------------------------------------------
+
+builder.Services.AddSignalR();
 
 // ------------------------------------------------------------
 // APPLICATION SERVICES
@@ -310,5 +343,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// SignalR endpoint; JWT authentication is required.
+app.MapHub<DeviceNotificationHub>(
+    "/hubs/device-notifications")
+    .RequireAuthorization();
 
 app.Run();
