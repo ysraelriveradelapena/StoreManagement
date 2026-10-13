@@ -4,47 +4,73 @@
 @namespace StoreManagement.Web.Components.Dialogs.Categories
 
 <MudDialog>
+
     <DialogContent>
+
         <MudTextField T="string"
                       Label="Category Name"
                       @bind-Value="_name"
                       Required="true"
                       RequiredError="Category name is required."
-                      Variant="Variant.Outlined"
+                      Variant="MudBlazor.Variant.Outlined"
                       Immediate="true"
-                      MaxLength="100" />
+                      MaxLength="100"
+                      AutoFocus="true" />
+
     </DialogContent>
 
     <DialogActions>
+
         <MudButton OnClick="Cancel"
-                   Variant="Variant.Text">
+                   Variant="MudBlazor.Variant.Text">
             Cancel
         </MudButton>
 
         <MudButton OnClick="Save"
                    Color="Color.Primary"
-                   Variant="Variant.Filled">
-            Save
+                   Variant="MudBlazor.Variant.Filled"
+                   Disabled="@string.IsNullOrWhiteSpace(_name)">
+
+            @(Category is null ? "Add Category" : "Save Changes")
+
         </MudButton>
+
     </DialogActions>
+
 </MudDialog>
 
 @code {
+
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = default!;
 
-    private string _name = "";
+    // Null = Add mode
+    // Has value = Edit mode
+    [Parameter]
+    public CategoryDto? Category { get; set; }
+
+    private string _name = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        if (Category is not null)
+        {
+            _name = Category.Name;
+        }
+    }
 
     private void Save()
     {
-        if (string.IsNullOrWhiteSpace(_name))
+        var name = _name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
             return;
 
         MudDialog.Close(
             DialogResult.Ok(
                 new CreateCategoryRequest
                 {
-                    Name = _name.Trim()
+                    Name = name
                 }));
     }
 

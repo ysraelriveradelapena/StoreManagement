@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
@@ -41,13 +44,10 @@ public class ProductsController : ControllerBase
                 ProductCode = x.ProductCode,
                 Name = x.Name,
                 BrandId = x.BrandId,
-                BrandName = x.Brand != null
-                    ? x.Brand.Name
-                    : null,
+                BrandName = x.Brand != null ? x.Brand.Name : null,
                 CategoryId = x.CategoryId,
-                CategoryName = x.Category != null
-                    ? x.Category.Name
-                    : null,
+                CategoryName = x.Category != null ? x.Category.Name : null,
+                NonExchangeable = x.NonExchangeable,
                 IsActive = x.IsActive,
                 CreatedAtUtc = x.CreatedAtUtc,
                 UpdatedAtUtc = x.UpdatedAtUtc
@@ -62,8 +62,6 @@ public class ProductsController : ControllerBase
     {
         var product = await _db.Products
             .AsNoTracking()
-            .Include(x => x.Brand)
-            .Include(x => x.Category)
             .Where(x => x.Id == id)
             .Select(x => new ProductResponse
             {
@@ -71,13 +69,10 @@ public class ProductsController : ControllerBase
                 ProductCode = x.ProductCode,
                 Name = x.Name,
                 BrandId = x.BrandId,
-                BrandName = x.Brand != null
-                    ? x.Brand.Name
-                    : null,
+                BrandName = x.Brand != null ? x.Brand.Name : null,
                 CategoryId = x.CategoryId,
-                CategoryName = x.Category != null
-                    ? x.Category.Name
-                    : null,
+                CategoryName = x.Category != null ? x.Category.Name : null,
+                NonExchangeable = x.NonExchangeable,
                 IsActive = x.IsActive,
                 CreatedAtUtc = x.CreatedAtUtc,
                 UpdatedAtUtc = x.UpdatedAtUtc
@@ -85,7 +80,9 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (product == null)
+        {
             return NotFound(new { message = "Product not found." });
+        }
 
         return Ok(product);
     }
@@ -102,10 +99,12 @@ public class ProductsController : ControllerBase
             .AnyAsync(x => x.ProductCode == productCode);
 
         if (duplicate)
+        {
             return Conflict(new
             {
                 message = $"Product code '{productCode}' already exists."
             });
+        }
 
         Brand? brand = null;
 
@@ -115,16 +114,20 @@ public class ProductsController : ControllerBase
                 .FirstOrDefaultAsync(x => x.Id == request.BrandId.Value);
 
             if (brand == null)
+            {
                 return BadRequest(new
                 {
                     message = "Specified brand does not exist."
                 });
+            }
 
             if (!brand.IsActive)
+            {
                 return BadRequest(new
                 {
                     message = "Cannot assign an inactive brand."
                 });
+            }
         }
 
         Category? category = null;
@@ -135,16 +138,20 @@ public class ProductsController : ControllerBase
                 .FirstOrDefaultAsync(x => x.Id == request.CategoryId.Value);
 
             if (category == null)
+            {
                 return BadRequest(new
                 {
                     message = "Specified category does not exist."
                 });
+            }
 
             if (!category.IsActive)
+            {
                 return BadRequest(new
                 {
                     message = "Cannot assign an inactive category."
                 });
+            }
         }
 
         var product = new Product
@@ -153,11 +160,33 @@ public class ProductsController : ControllerBase
             Name = name,
             BrandId = request.BrandId,
             CategoryId = request.CategoryId,
+            NonExchangeable = request.NonExchangeable,
             IsActive = true,
             CreatedAtUtc = DateTime.UtcNow
         };
 
         _db.Products.Add(product);
+
+        await _db.SaveChangesAsync();
+
+        var newValues = new
+        {
+            product.ProductCode,
+            product.Name,
+            product.BrandId,
+            BrandName = brand?.Name,
+            product.CategoryId,
+            CategoryName = category?.Name,
+            product.NonExchangeable,
+            product.IsActive
+        };
+
+        _db.AuditLogs.Add(CreateAuditLog(
+            product.Id,
+            "CREATE",
+            null,
+            newValues));
+
         await _db.SaveChangesAsync();
 
         return CreatedAtAction(
@@ -172,8 +201,10 @@ public class ProductsController : ControllerBase
                 BrandName = brand?.Name,
                 CategoryId = product.CategoryId,
                 CategoryName = category?.Name,
+                NonExchangeable = product.NonExchangeable,
                 IsActive = product.IsActive,
-                CreatedAtUtc = product.CreatedAtUtc
+                CreatedAtUtc = product.CreatedAtUtc,
+                UpdatedAtUtc = product.UpdatedAtUtc
             });
     }
 
@@ -187,9 +218,12 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (product == null)
+        {
             return NotFound(new { message = "Product not found." });
+        }
 
         var productCode = request.ProductCode.Trim();
+        var name = request.Name.Trim();
 
         var duplicate = await _db.Products
             .AnyAsync(x =>
@@ -197,10 +231,12 @@ public class ProductsController : ControllerBase
                 x.ProductCode == productCode);
 
         if (duplicate)
+        {
             return Conflict(new
             {
                 message = $"Product code '{productCode}' already exists."
             });
+        }
 
         Brand? brand = null;
 
@@ -210,16 +246,20 @@ public class ProductsController : ControllerBase
                 .FirstOrDefaultAsync(x => x.Id == request.BrandId.Value);
 
             if (brand == null)
+            {
                 return BadRequest(new
                 {
                     message = "Specified brand does not exist."
                 });
+            }
 
             if (!brand.IsActive)
+            {
                 return BadRequest(new
                 {
                     message = "Cannot assign an inactive brand."
                 });
+            }
         }
 
         Category? category = null;
@@ -230,25 +270,67 @@ public class ProductsController : ControllerBase
                 .FirstOrDefaultAsync(x => x.Id == request.CategoryId.Value);
 
             if (category == null)
+            {
                 return BadRequest(new
                 {
                     message = "Specified category does not exist."
                 });
+            }
 
             if (!category.IsActive)
+            {
                 return BadRequest(new
                 {
                     message = "Cannot assign an inactive category."
                 });
+            }
         }
 
+        var oldValues = new
+        {
+            product.ProductCode,
+            product.Name,
+            product.BrandId,
+            product.CategoryId,
+            product.NonExchangeable,
+            product.IsActive
+        };
+
+        var changed =
+            product.ProductCode != productCode ||
+            product.Name != name ||
+            product.BrandId != request.BrandId ||
+            product.CategoryId != request.CategoryId ||
+            product.NonExchangeable != request.NonExchangeable;
+
         product.ProductCode = productCode;
-        product.Name = request.Name.Trim();
+        product.Name = name;
         product.BrandId = request.BrandId;
         product.CategoryId = request.CategoryId;
-        product.UpdatedAtUtc = DateTime.UtcNow;
+        product.NonExchangeable = request.NonExchangeable;
 
-        await _db.SaveChangesAsync();
+        if (changed)
+        {
+            product.UpdatedAtUtc = DateTime.UtcNow;
+
+            var newValues = new
+            {
+                product.ProductCode,
+                product.Name,
+                product.BrandId,
+                product.CategoryId,
+                product.NonExchangeable,
+                product.IsActive
+            };
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                product.Id,
+                "UPDATE",
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new ProductResponse
         {
@@ -259,6 +341,7 @@ public class ProductsController : ControllerBase
             BrandName = brand?.Name,
             CategoryId = product.CategoryId,
             CategoryName = category?.Name,
+            NonExchangeable = product.NonExchangeable,
             IsActive = product.IsActive,
             CreatedAtUtc = product.CreatedAtUtc,
             UpdatedAtUtc = product.UpdatedAtUtc
@@ -274,12 +357,35 @@ public class ProductsController : ControllerBase
         var product = await _db.Products.FindAsync(id);
 
         if (product == null)
+        {
             return NotFound(new { message = "Product not found." });
+        }
 
-        product.IsActive = request.IsActive;
-        product.UpdatedAtUtc = DateTime.UtcNow;
+        if (product.IsActive != request.IsActive)
+        {
+            var oldValues = new
+            {
+                product.IsActive
+            };
 
-        await _db.SaveChangesAsync();
+            product.IsActive = request.IsActive;
+            product.UpdatedAtUtc = DateTime.UtcNow;
+
+            var newValues = new
+            {
+                product.IsActive
+            };
+
+            var action = request.IsActive ? "ACTIVATE" : "DEACTIVATE";
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                product.Id,
+                action,
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new
         {
@@ -289,5 +395,28 @@ public class ProductsController : ControllerBase
             productId = product.Id,
             isActive = product.IsActive
         });
+    }
+
+    private AuditLog CreateAuditLog(
+        int productId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "Product",
+            EntityId = productId.ToString(),
+            Action = action,
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
     }
 }

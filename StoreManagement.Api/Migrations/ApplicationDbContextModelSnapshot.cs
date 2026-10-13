@@ -483,6 +483,9 @@ namespace StoreManagement.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool>("NonExchangeable")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ProductCode")
                         .IsRequired()
                         .HasMaxLength(50)

@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
@@ -17,6 +20,33 @@ public class BrandsController : ControllerBase
     public BrandsController(ApplicationDbContext db)
     {
         _db = db;
+    }
+
+    private string? CurrentUserId =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    private AuditLog CreateAuditLog(
+        int brandId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "Brand",
+            EntityId = brandId.ToString(),
+            Action = action,
+            UserId = CurrentUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
     }
 
     [HttpGet]
@@ -70,7 +100,10 @@ public class BrandsController : ControllerBase
     public async Task<ActionResult<BrandResponse>> CreateBrand(
         CreateBrandRequest request)
     {
-        var name = request.Name.Trim();
+        var name = request.Name?.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Brand name is required." });
 
         var exists = await _db.Brands
             .AnyAsync(x => x.Name == name);
@@ -88,8 +121,27 @@ public class BrandsController : ControllerBase
             CreatedAtUtc = DateTime.UtcNow
         };
 
+        // Brand ID is database-generated.
+        // Save the Brand first, then create its audit record
+        // within the same database transaction.
+        await using var transaction =
+            await _db.Database.BeginTransactionAsync();
+
         _db.Brands.Add(brand);
         await _db.SaveChangesAsync();
+
+        _db.AuditLogs.Add(CreateAuditLog(
+            brand.Id,
+            "CREATE",
+            null,
+            new
+            {
+                brand.Name,
+                brand.IsActive
+            }));
+
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         return CreatedAtAction(
             nameof(GetBrand),
@@ -114,7 +166,10 @@ public class BrandsController : ControllerBase
         if (brand == null)
             return NotFound(new { message = "Brand not found." });
 
-        var name = request.Name.Trim();
+        var name = request.Name?.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Brand name is required." });
 
         var duplicate = await _db.Brands
             .AnyAsync(x => x.Id != id && x.Name == name);
@@ -125,9 +180,37 @@ public class BrandsController : ControllerBase
                 message = $"Brand '{name}' already exists."
             });
 
+        // Avoid creating audit records for unchanged values.
+        if (brand.Name == name)
+        {
+            return Ok(new BrandResponse
+            {
+                Id = brand.Id,
+                Name = brand.Name,
+                IsActive = brand.IsActive,
+                CreatedAtUtc = brand.CreatedAtUtc,
+                UpdatedAtUtc = brand.UpdatedAtUtc
+            });
+        }
+
+        var oldValues = new
+        {
+            brand.Name
+        };
+
         brand.Name = name;
         brand.UpdatedAtUtc = DateTime.UtcNow;
 
+        _db.AuditLogs.Add(CreateAuditLog(
+            brand.Id,
+            "UPDATE",
+            oldValues,
+            new
+            {
+                brand.Name
+            }));
+
+        // Both changes are saved in the same SaveChanges transaction.
         await _db.SaveChangesAsync();
 
         return Ok(new BrandResponse
@@ -151,8 +234,32 @@ public class BrandsController : ControllerBase
         if (brand == null)
             return NotFound(new { message = "Brand not found." });
 
+        if (brand.IsActive == request.IsActive)
+        {
+            return Ok(new
+            {
+                message = "Brand status is already up to date.",
+                brandId = brand.Id,
+                isActive = brand.IsActive
+            });
+        }
+
+        var oldValues = new
+        {
+            brand.IsActive
+        };
+
         brand.IsActive = request.IsActive;
         brand.UpdatedAtUtc = DateTime.UtcNow;
+
+        _db.AuditLogs.Add(CreateAuditLog(
+            brand.Id,
+            request.IsActive ? "ACTIVATE" : "DEACTIVATE",
+            oldValues,
+            new
+            {
+                brand.IsActive
+            }));
 
         await _db.SaveChangesAsync();
 

@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
@@ -17,6 +20,53 @@ public class DevicesController : ControllerBase
     public DevicesController(ApplicationDbContext db)
     {
         _db = db;
+    }
+
+    private string? CurrentUserId =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    private AuditLog CreateAuditLog(
+        int deviceId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "Device",
+            EntityId = deviceId.ToString(),
+            Action = action,
+            UserId = CurrentUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
+    }
+
+    private async Task<DeviceResponse> BuildDeviceResponse(Device device)
+    {
+        var storeName = await _db.Stores
+            .Where(x => x.Id == device.StoreId)
+            .Select(x => x.StoreName)
+            .FirstOrDefaultAsync();
+
+        return new DeviceResponse
+        {
+            Id = device.Id,
+            Code = device.Code,
+            Name = device.Name,
+            StoreId = device.StoreId,
+            StoreName = storeName,
+            IsActive = device.IsActive,
+            LastSyncAtUtc = device.LastSyncAtUtc,
+            CreatedAtUtc = device.CreatedAtUtc
+        };
     }
 
     // GET: api/devices
@@ -87,17 +137,17 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<DeviceResponse>> CreateDevice(
         [FromBody] CreateDeviceRequest request)
     {
-        var code = request.Code.Trim().ToUpperInvariant();
-        var name = request.Name.Trim();
-
-        if (string.IsNullOrWhiteSpace(code) ||
-            string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(request.Code) ||
+            string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest(new
             {
                 message = "Code and Name are required."
             });
         }
+
+        var code = request.Code.Trim().ToUpperInvariant();
+        var name = request.Name.Trim();
 
         var storeExists = await _db.Stores
             .AnyAsync(x => x.Id == request.StoreId);
@@ -131,24 +181,25 @@ public class DevicesController : ControllerBase
         };
 
         _db.Devices.Add(device);
+
+        // Save first so the database-generated device ID is available.
         await _db.SaveChangesAsync();
 
-        var storeName = await _db.Stores
-            .Where(x => x.Id == device.StoreId)
-            .Select(x => x.StoreName)
-            .FirstOrDefaultAsync();
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            device.Id,
+            "CREATE",
+            null,
+            new
+            {
+                device.Code,
+                device.Name,
+                device.StoreId,
+                device.IsActive
+            }));
 
-        var response = new DeviceResponse
-        {
-            Id = device.Id,
-            Code = device.Code,
-            Name = device.Name,
-            StoreId = device.StoreId,
-            StoreName = storeName,
-            IsActive = device.IsActive,
-            LastSyncAtUtc = device.LastSyncAtUtc,
-            CreatedAtUtc = device.CreatedAtUtc
-        };
+        await _db.SaveChangesAsync();
+
+        var response = await BuildDeviceResponse(device);
 
         return CreatedAtAction(
             nameof(GetDevice),
@@ -170,17 +221,17 @@ public class DevicesController : ControllerBase
             return NotFound(new { message = "Device not found." });
         }
 
-        var code = request.Code.Trim().ToUpperInvariant();
-        var name = request.Name.Trim();
-
-        if (string.IsNullOrWhiteSpace(code) ||
-            string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(request.Code) ||
+            string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest(new
             {
                 message = "Code and Name are required."
             });
         }
+
+        var code = request.Code.Trim().ToUpperInvariant();
+        var name = request.Name.Trim();
 
         var storeExists = await _db.Stores
             .AnyAsync(x => x.Id == request.StoreId);
@@ -204,28 +255,41 @@ public class DevicesController : ControllerBase
             });
         }
 
+        var oldValues = new
+        {
+            device.Code,
+            device.Name,
+            device.StoreId
+        };
+
+        var codeChanged = device.Code != code;
+        var nameChanged = device.Name != name;
+        var storeChanged = device.StoreId != request.StoreId;
+
+        if (!codeChanged && !nameChanged && !storeChanged)
+        {
+            return Ok(await BuildDeviceResponse(device));
+        }
+
         device.Code = code;
         device.Name = name;
         device.StoreId = request.StoreId;
 
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            device.Id,
+            "UPDATE",
+            oldValues,
+            new
+            {
+                device.Code,
+                device.Name,
+                device.StoreId
+            }));
+
+        // The device update and audit insert are saved together.
         await _db.SaveChangesAsync();
 
-        var storeName = await _db.Stores
-            .Where(x => x.Id == device.StoreId)
-            .Select(x => x.StoreName)
-            .FirstOrDefaultAsync();
-
-        return Ok(new DeviceResponse
-        {
-            Id = device.Id,
-            Code = device.Code,
-            Name = device.Name,
-            StoreId = device.StoreId,
-            StoreName = storeName,
-            IsActive = device.IsActive,
-            LastSyncAtUtc = device.LastSyncAtUtc,
-            CreatedAtUtc = device.CreatedAtUtc
-        });
+        return Ok(await BuildDeviceResponse(device));
     }
 
     // PATCH: api/devices/1/status
@@ -242,7 +306,31 @@ public class DevicesController : ControllerBase
             return NotFound(new { message = "Device not found." });
         }
 
+        if (device.IsActive == request.IsActive)
+        {
+            return Ok(new
+            {
+                device.Id,
+                device.IsActive,
+                message = "Device status is unchanged."
+            });
+        }
+
+        var oldValues = new
+        {
+            device.IsActive
+        };
+
         device.IsActive = request.IsActive;
+
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            device.Id,
+            request.IsActive ? "ACTIVATE" : "DEACTIVATE",
+            oldValues,
+            new
+            {
+                device.IsActive
+            }));
 
         await _db.SaveChangesAsync();
 

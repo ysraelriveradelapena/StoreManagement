@@ -1,5 +1,4 @@
-﻿
-@page "/products"
+﻿@page "/products"
 
 @using StoreManagement.Web.DTOs.Products
 @using StoreManagement.Web.Components.Dialogs.Products
@@ -56,6 +55,7 @@
                     <MudTh>Product Name</MudTh>
                     <MudTh>Brand</MudTh>
                     <MudTh>Category</MudTh>
+                    <MudTh>Exchange Policy</MudTh>
                     <MudTh>Status</MudTh>
                     <MudTh>Actions</MudTh>
                 </HeaderContent>
@@ -75,6 +75,27 @@
 
                     <MudTd DataLabel="Category">
                         @(context.CategoryName ?? "—")
+                    </MudTd>
+
+                    <MudTd DataLabel="Exchange Policy">
+                        @if (context.NonExchangeable)
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="Color.Warning"
+                                     Variant="Variant.Filled">
+                                Non-Exchangeable
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="Color.Success"
+                                     Variant="Variant.Outlined">
+                                Exchangeable
+                            </MudChip>
+                        }
                     </MudTd>
 
                     <MudTd DataLabel="Status">
@@ -100,14 +121,14 @@
                                            OnClick="@(() => EditProduct(context))" />
 
                             <MudIconButton Icon="@(context.IsActive
-                                                                           ? Icons.Material.Filled.Archive
-                                                                           : Icons.Material.Filled.Unarchive)"
+                                                                       ? Icons.Material.Filled.Block
+                                                                       : Icons.Material.Filled.CheckCircle)"
                                        Color="@(context.IsActive
-                                                                           ? Color.Error
-                                                                           : Color.Success)"
+                                                                                      ? Color.Error
+                                                                                      : Color.Success)"
                                        Title="@(context.IsActive
-                                                                           ? "Deactivate product"
-                                                                           : "Activate product")"
+                                                                                      ? "Deactivate product"
+                                                                                      : "Activate product")"
                                        OnClick="@(() => ToggleStatus(context))" />
                     </MudStack>
                 </MudTd>

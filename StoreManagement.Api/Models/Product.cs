@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿
+using System.ComponentModel.DataAnnotations;
 
 namespace StoreManagement.Api.Models;
 
@@ -21,6 +22,8 @@ public class Product
     public int? CategoryId { get; set; }
 
     public Category? Category { get; set; }
+
+    public bool NonExchangeable { get; set; } = false;
 
     public bool IsActive { get; set; } = true;
 

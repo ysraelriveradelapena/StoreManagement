@@ -1,4 +1,5 @@
-﻿namespace StoreManagement.Api.DTOs.Products;
+﻿
+namespace StoreManagement.Api.DTOs.Products;
 
 public class ProductResponse
 {
@@ -15,6 +16,8 @@ public class ProductResponse
     public int? CategoryId { get; set; }
 
     public string? CategoryName { get; set; }
+
+    public bool NonExchangeable { get; set; }
 
     public bool IsActive { get; set; }
 

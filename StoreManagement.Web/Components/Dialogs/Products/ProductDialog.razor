@@ -57,6 +57,18 @@
                     }
                 </MudSelect>
 
+                <MudDivider />
+
+                <MudCheckBox T="bool"
+                             @bind-Value="_model.NonExchangeable"
+                             Label="Non-Exchangeable"
+                             Color="Color.Warning"
+                             Disabled="_saving" />
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Enable this option if the product cannot be exchanged.
+                </MudText>
+
                 @if (_loading)
                 {
                     <MudProgressLinear Indeterminate="true" />
@@ -107,7 +119,8 @@
                 ProductCode = Product.ProductCode,
                 Name = Product.Name,
                 BrandId = Product.BrandId,
-                CategoryId = Product.CategoryId
+                CategoryId = Product.CategoryId,
+                NonExchangeable = Product.NonExchangeable
             };
         }
 

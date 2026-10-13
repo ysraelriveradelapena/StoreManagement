@@ -126,13 +126,16 @@
                                    Title="Edit variant"
                                    OnClick="@(() => EditVariant(context))" />
 
-                    <MudIconButton Icon="@Icons.Material.Filled.AttachMoney"
+                    <MudIconButton 
                                    Color="Color.Success"
                                    Size="Size.Small"
                                    Title="Manage prices"
-                                   OnClick="@(() => ManagePrices(context))" />
+                                   OnClick="@(() => ManagePrices(context))" 
+                                   >
+                        <span style="font-size: 20px; font-weight: bold;">₱</span>
+                    </MudIconButton>
 
-                    <MudIconButton Icon="@(context.IsActive
+                        <MudIconButton Icon="@(context.IsActive
                                                                             ? Icons.Material.Filled.Block
                                                                             : Icons.Material.Filled.CheckCircle)"
                                    Color="@(context.IsActive

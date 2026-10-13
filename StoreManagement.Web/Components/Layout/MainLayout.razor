@@ -1,5 +1,4 @@
-﻿
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @using MudBlazor
 @using StoreManagement.Web.Services
 
@@ -62,7 +61,6 @@
 
     </MudAppBar>
 
-
     <!-- Sidebar -->
     <MudDrawer Open="true"
                Variant="DrawerVariant.Responsive"
@@ -70,30 +68,28 @@
                Color="Color.Dark">
 
         <MudDrawerHeader>
-
-            <MudText Typo="Typo.h6"
-                     Class="px-4">
+            <MudText Typo="Typo.h6" Class="px-4">
                 Store Management
             </MudText>
-
         </MudDrawerHeader>
-
 
         <MudNavMenu>
 
+            <!-- Dashboard -->
             <MudNavLink Href="/"
                         Match="NavLinkMatch.All"
                         Icon="@Icons.Material.Filled.Dashboard">
                 Dashboard
             </MudNavLink>
 
-
+            <!-- Masters -->
             <MudText Typo="Typo.overline"
                      Class="px-4 mt-4 mb-2">
                 Masters
             </MudText>
 
-            <MudNavLink Href="/products" Icon="@Icons.Material.Filled.Inventory2">
+            <MudNavLink Href="/products"
+                        Icon="@Icons.Material.Filled.Inventory2">
                 Products
             </MudNavLink>
 
@@ -107,25 +103,12 @@
                 Categories
             </MudNavLink>
 
-            <MudNavLink Href="/reason-codes" Icon="@Icons.Material.Filled.Rule">
+            <MudNavLink Href="/reason-codes"
+                        Icon="@Icons.Material.Filled.Rule">
                 Reason Codes
             </MudNavLink>
 
-            <MudNavLink Href="/users"
-                        Icon="@Icons.Material.Filled.People">
-                Users
-            </MudNavLink>
-
-            <MudNavLink Href="/stores"
-                        Icon="@Icons.Material.Filled.Store">
-                Stores
-            </MudNavLink>
-
-            <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.Devices">
-                Devices
-            </MudNavLink>
-
-
+            <!-- Inventory -->
             <MudText Typo="Typo.overline"
                      Class="px-4 mt-4 mb-2">
                 Inventory
@@ -151,7 +134,7 @@
                 Transfers
             </MudNavLink>
 
-
+            <!-- Sales -->
             <MudText Typo="Typo.overline"
                      Class="px-4 mt-4 mb-2">
                 Sales
@@ -167,7 +150,7 @@
                 Returns
             </MudNavLink>
 
-
+            <!-- Reports -->
             <MudText Typo="Typo.overline"
                      Class="px-4 mt-4 mb-2">
                 Reports
@@ -178,11 +161,21 @@
                 Reports
             </MudNavLink>
 
-
+            <!-- Administration -->
             <MudText Typo="Typo.overline"
                      Class="px-4 mt-4 mb-2">
                 Administration
             </MudText>
+
+            <MudNavLink Href="/users"
+                        Icon="@Icons.Material.Filled.People">
+                Users
+            </MudNavLink>
+
+            <MudNavLink Href="/stores"
+                        Icon="@Icons.Material.Filled.Store">
+                Stores
+            </MudNavLink>
 
             <MudNavLink Href="/devices"
                         Icon="@Icons.Material.Filled.Devices">
@@ -198,20 +191,19 @@
 
     </MudDrawer>
 
-
     <!-- Main Content -->
-    <MudMainContent>
+    <MudMainContent Class="app-main-content">
 
         <MudContainer MaxWidth="MaxWidth.False"
-                      Class="pa-6">
+                      Class="pa-6 app-content">
 
             @Body
 
         </MudContainer>
 
     </MudMainContent>
-</MudLayout>
 
+</MudLayout>
 
 @code {
 
@@ -238,10 +230,10 @@
             Divider = "#252936"
         }
     };
+
     private string GetUserName()
     {
-        return AuthState.CurrentUser?.UserName
-               ?? "Guest";
+        return AuthState.CurrentUser?.UserName ?? "Guest";
     }
 
     private string GetInitial()
@@ -249,14 +241,16 @@
         var userName = AuthState.CurrentUser?.UserName;
 
         if (string.IsNullOrWhiteSpace(userName))
+        {
             return "?";
+        }
 
         return userName.Substring(0, 1).ToUpper();
     }
+
     private string GetUserRole()
     {
-        return AuthState.CurrentUser?.Roles?.FirstOrDefault()
-               ?? "User";
+        return AuthState.CurrentUser?.Roles?.FirstOrDefault() ?? "User";
     }
 
     private async Task Logout()
@@ -267,6 +261,4 @@
 
         Navigation.NavigateTo("/login");
     }
-
-
 }

@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
@@ -51,17 +54,13 @@ public class ProductVariantPricesController : ControllerBase
             {
                 Id = x.Id,
                 ProductVariantId = x.ProductVariantId,
-
                 SKU = x.ProductVariant.SKU,
                 Barcode = x.ProductVariant.Barcode,
                 VariantName = x.ProductVariant.VariantName,
-
                 Price = x.Price,
                 PriceType = x.PriceType,
-
                 EffectiveFrom = x.EffectiveFrom,
                 EffectiveTo = x.EffectiveTo,
-
                 IsActive = x.IsActive
             })
             .ToListAsync();
@@ -80,17 +79,13 @@ public class ProductVariantPricesController : ControllerBase
             {
                 Id = x.Id,
                 ProductVariantId = x.ProductVariantId,
-
                 SKU = x.ProductVariant.SKU,
                 Barcode = x.ProductVariant.Barcode,
                 VariantName = x.ProductVariant.VariantName,
-
                 Price = x.Price,
                 PriceType = x.PriceType,
-
                 EffectiveFrom = x.EffectiveFrom,
                 EffectiveTo = x.EffectiveTo,
-
                 IsActive = x.IsActive
             })
             .FirstOrDefaultAsync();
@@ -105,8 +100,8 @@ public class ProductVariantPricesController : ControllerBase
 
     [HttpGet("current/{productVariantId:int}")]
     public async Task<ActionResult<ProductVariantPriceResponse>> GetCurrentPrice(
-    int productVariantId,
-    [FromQuery] string priceType = "REGULAR")
+        int productVariantId,
+        [FromQuery] string priceType = "REGULAR")
     {
         var result = await _priceService.GetCurrentPriceAsync(
             productVariantId,
@@ -188,6 +183,27 @@ public class ProductVariantPricesController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        var newValues = new
+        {
+            price.ProductVariantId,
+            SKU = variant.SKU,
+            Barcode = variant.Barcode,
+            VariantName = variant.VariantName,
+            price.Price,
+            price.PriceType,
+            price.EffectiveFrom,
+            price.EffectiveTo,
+            price.IsActive
+        };
+
+        _db.AuditLogs.Add(CreateAuditLog(
+            price.Id,
+            "CREATE",
+            null,
+            newValues));
+
+        await _db.SaveChangesAsync();
+
         return CreatedAtAction(
             nameof(GetPrice),
             new { id = price.Id },
@@ -195,17 +211,13 @@ public class ProductVariantPricesController : ControllerBase
             {
                 Id = price.Id,
                 ProductVariantId = price.ProductVariantId,
-
                 SKU = variant.SKU,
                 Barcode = variant.Barcode,
                 VariantName = variant.VariantName,
-
                 Price = price.Price,
                 PriceType = price.PriceType,
-
                 EffectiveFrom = price.EffectiveFrom,
                 EffectiveTo = price.EffectiveTo,
-
                 IsActive = price.IsActive
             });
     }
@@ -261,28 +273,65 @@ public class ProductVariantPricesController : ControllerBase
                 "The price period overlaps an existing active price.");
         }
 
+        var oldValues = new
+        {
+            price.ProductVariantId,
+            SKU = price.ProductVariant.SKU,
+            Barcode = price.ProductVariant.Barcode,
+            VariantName = price.ProductVariant.VariantName,
+            price.Price,
+            price.PriceType,
+            price.EffectiveFrom,
+            price.EffectiveTo,
+            price.IsActive
+        };
+
+        var changed =
+            price.Price != request.Price ||
+            price.PriceType != priceType ||
+            price.EffectiveFrom != request.EffectiveFrom ||
+            price.EffectiveTo != request.EffectiveTo;
+
         price.Price = request.Price;
         price.PriceType = priceType;
         price.EffectiveFrom = request.EffectiveFrom;
         price.EffectiveTo = request.EffectiveTo;
 
-        await _db.SaveChangesAsync();
+        if (changed)
+        {
+            var newValues = new
+            {
+                price.ProductVariantId,
+                SKU = price.ProductVariant.SKU,
+                Barcode = price.ProductVariant.Barcode,
+                VariantName = price.ProductVariant.VariantName,
+                price.Price,
+                price.PriceType,
+                price.EffectiveFrom,
+                price.EffectiveTo,
+                price.IsActive
+            };
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                price.Id,
+                "UPDATE",
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new ProductVariantPriceResponse
         {
             Id = price.Id,
             ProductVariantId = price.ProductVariantId,
-
             SKU = price.ProductVariant.SKU,
             Barcode = price.ProductVariant.Barcode,
             VariantName = price.ProductVariant.VariantName,
-
             Price = price.Price,
             PriceType = price.PriceType,
-
             EffectiveFrom = price.EffectiveFrom,
             EffectiveTo = price.EffectiveTo,
-
             IsActive = price.IsActive
         });
     }
@@ -294,6 +343,7 @@ public class ProductVariantPricesController : ControllerBase
         UpdateProductVariantPriceStatusRequest request)
     {
         var price = await _db.ProductVariantPrices
+            .Include(x => x.ProductVariant)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (price == null)
@@ -301,10 +351,64 @@ public class ProductVariantPricesController : ControllerBase
             return NotFound();
         }
 
-        price.IsActive = request.IsActive;
+        if (price.IsActive != request.IsActive)
+        {
+            var oldValues = new
+            {
+                price.IsActive,
+                price.Price,
+                price.PriceType,
+                price.EffectiveFrom,
+                price.EffectiveTo
+            };
 
-        await _db.SaveChangesAsync();
+            price.IsActive = request.IsActive;
+
+            var newValues = new
+            {
+                price.IsActive,
+                price.Price,
+                price.PriceType,
+                price.EffectiveFrom,
+                price.EffectiveTo
+            };
+
+            var action = request.IsActive
+                ? "ACTIVATE"
+                : "DEACTIVATE";
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                price.Id,
+                action,
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return NoContent();
+    }
+
+    private AuditLog CreateAuditLog(
+        int priceId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "ProductVariantPrice",
+            EntityId = priceId.ToString(),
+            Action = action,
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
     }
 }

@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
@@ -95,12 +98,12 @@ public class ProductVariantsController : ControllerBase
     public async Task<ActionResult<ProductVariantResponse>> GetByBarcode(
         string barcode)
     {
-        barcode = barcode.Trim();
-
         if (string.IsNullOrWhiteSpace(barcode))
         {
             return BadRequest("Barcode is required.");
         }
+
+        barcode = barcode.Trim();
 
         var result = await _db.ProductVariants
             .AsNoTracking()
@@ -204,6 +207,27 @@ public class ProductVariantsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        var newValues = new
+        {
+            variant.ProductId,
+            ProductCode = product.ProductCode,
+            ProductName = product.Name,
+            variant.SKU,
+            variant.Barcode,
+            variant.VariantName,
+            variant.Size,
+            variant.Color,
+            variant.IsActive
+        };
+
+        _db.AuditLogs.Add(CreateAuditLog(
+            variant.Id,
+            "CREATE",
+            null,
+            newValues));
+
+        await _db.SaveChangesAsync();
+
         return CreatedAtAction(
             nameof(GetProductVariant),
             new { id = variant.Id },
@@ -283,21 +307,71 @@ public class ProductVariantsController : ControllerBase
             }
         }
 
+        var variantName = string.IsNullOrWhiteSpace(request.VariantName)
+            ? null
+            : request.VariantName.Trim();
+
+        var size = string.IsNullOrWhiteSpace(request.Size)
+            ? null
+            : request.Size.Trim();
+
+        var color = string.IsNullOrWhiteSpace(request.Color)
+            ? null
+            : request.Color.Trim();
+
+        var oldValues = new
+        {
+            variant.ProductId,
+            ProductCode = variant.Product.ProductCode,
+            ProductName = variant.Product.Name,
+            variant.SKU,
+            variant.Barcode,
+            variant.VariantName,
+            variant.Size,
+            variant.Color,
+            variant.IsActive
+        };
+
+        var changed =
+            variant.ProductId != request.ProductId ||
+            variant.SKU != sku ||
+            variant.Barcode != barcode ||
+            variant.VariantName != variantName ||
+            variant.Size != size ||
+            variant.Color != color;
+
         variant.ProductId = request.ProductId;
         variant.SKU = sku;
         variant.Barcode = barcode;
-        variant.VariantName = string.IsNullOrWhiteSpace(request.VariantName)
-            ? null
-            : request.VariantName.Trim();
-        variant.Size = string.IsNullOrWhiteSpace(request.Size)
-            ? null
-            : request.Size.Trim();
-        variant.Color = string.IsNullOrWhiteSpace(request.Color)
-            ? null
-            : request.Color.Trim();
-        variant.UpdatedAtUtc = DateTime.UtcNow;
+        variant.VariantName = variantName;
+        variant.Size = size;
+        variant.Color = color;
 
-        await _db.SaveChangesAsync();
+        if (changed)
+        {
+            variant.UpdatedAtUtc = DateTime.UtcNow;
+
+            var newValues = new
+            {
+                variant.ProductId,
+                ProductCode = product.ProductCode,
+                ProductName = product.Name,
+                variant.SKU,
+                variant.Barcode,
+                variant.VariantName,
+                variant.Size,
+                variant.Color,
+                variant.IsActive
+            };
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                variant.Id,
+                "UPDATE",
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new ProductVariantResponse
         {
@@ -330,11 +404,57 @@ public class ProductVariantsController : ControllerBase
             return NotFound();
         }
 
-        variant.IsActive = request.IsActive;
-        variant.UpdatedAtUtc = DateTime.UtcNow;
+        if (variant.IsActive != request.IsActive)
+        {
+            var oldValues = new
+            {
+                variant.IsActive
+            };
 
-        await _db.SaveChangesAsync();
+            variant.IsActive = request.IsActive;
+            variant.UpdatedAtUtc = DateTime.UtcNow;
+
+            var newValues = new
+            {
+                variant.IsActive
+            };
+
+            var action = request.IsActive
+                ? "ACTIVATE"
+                : "DEACTIVATE";
+
+            _db.AuditLogs.Add(CreateAuditLog(
+                variant.Id,
+                action,
+                oldValues,
+                newValues));
+
+            await _db.SaveChangesAsync();
+        }
 
         return NoContent();
+    }
+
+    private AuditLog CreateAuditLog(
+        int variantId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "ProductVariant",
+            EntityId = variantId.ToString(),
+            Action = action,
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
     }
 }

@@ -144,13 +144,18 @@
                                        Disabled="_loading"
                                        OnClick="@(() => OpenEditStoreDialog(context))" />
 
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Outlined"
-                                   Color="@(context.IsActive ? Color.Error : Color.Success)"
-                                   Disabled="_loading"
-                                   OnClick="@(() => ToggleStoreStatusAsync(context))">
-                            @(context.IsActive ? "Deactivate" : "Activate")
-                        </MudButton>
+                        <MudIconButton Icon="@(context.IsActive
+                                                                  ? Icons.Material.Filled.Block
+                                                                  : Icons.Material.Filled.CheckCircle)"
+                                       Color="@(context.IsActive
+                                                                  ? Color.Error
+                                                                  : Color.Success)"
+                                       Size="Size.Small"
+                                       Title="@(context.IsActive
+                                                                  ? "Deactivate store"
+                                                                  : "Activate store")"
+                                       Disabled="_loading"
+                                       OnClick="@(() => ToggleStoreStatusAsync(context))" />
 
                     </MudStack>
                 </MudTd>

@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿
+using System.ComponentModel.DataAnnotations;
 
 namespace StoreManagement.Api.DTOs.Products;
 
@@ -15,4 +16,6 @@ public class CreateProductRequest
     public int? BrandId { get; set; }
 
     public int? CategoryId { get; set; }
+
+    public bool NonExchangeable { get; set; } = false;
 }

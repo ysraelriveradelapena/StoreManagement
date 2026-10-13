@@ -1,9 +1,13 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Data;
 using StoreManagement.Api.DTOs.Users;
+using StoreManagement.Api.Models;
 using StoreManagement.Api.Models.Identity;
 
 namespace StoreManagement.Api.Controllers;
@@ -27,32 +31,61 @@ public class UsersController : ControllerBase
         _roleManager = roleManager;
     }
 
+    private string? CurrentUserId =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    private AuditLog CreateAuditLog(
+        string userId,
+        string action,
+        object? oldValues,
+        object? newValues)
+    {
+        return new AuditLog
+        {
+            EntityName = "User",
+            EntityId = userId,
+            Action = action,
+            UserId = CurrentUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            OldValues = oldValues == null
+                ? null
+                : JsonSerializer.Serialize(oldValues),
+            NewValues = newValues == null
+                ? null
+                : JsonSerializer.Serialize(newValues),
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+        };
+    }
+
     // GET: api/users
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<UserResponse>>> GetUsers(
+    public async Task<IActionResult> GetUsers(
         [FromQuery] bool includeInactive = false)
     {
-        var users = await _userManager.Users
-            .AsNoTracking()
-            .Include(x => x.Store)
+        var query = _db.Users
+            .Include(u => u.Store)
+            .AsQueryable();
+
+        if (!includeInactive)
+        {
+            query = query.Where(u => u.IsActive);
+        }
+
+        var users = await query
+            .OrderBy(u => u.Email)
             .ToListAsync();
 
         var result = new List<UserResponse>();
 
         foreach (var user in users)
         {
-            if (!includeInactive && !user.IsActive)
-            {
-                continue;
-            }
-
             var roles = await _userManager.GetRolesAsync(user);
 
             result.Add(new UserResponse
             {
                 Id = user.Id,
                 Email = user.Email ?? string.Empty,
-                UserName = user.UserName ?? string.Empty,
                 StoreId = user.StoreId,
                 StoreCode = user.Store?.StoreCode,
                 StoreName = user.Store?.StoreName,
@@ -63,25 +96,20 @@ public class UsersController : ControllerBase
             });
         }
 
-        return Ok(result
-            .OrderBy(x => x.Email)
-            .ToList());
+        return Ok(result);
     }
 
     // GET: api/users/{id}
     [HttpGet("{id}")]
-    public async Task<ActionResult<UserResponse>> GetUser(string id)
+    public async Task<IActionResult> GetUser(string id)
     {
-        var user = await _userManager.Users
-            .Include(x => x.Store)
-            .FirstOrDefaultAsync(x => x.Id == id);
+        var user = await _db.Users
+            .Include(u => u.Store)
+            .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user == null)
         {
-            return NotFound(new
-            {
-                message = "User not found."
-            });
+            return NotFound(new { message = "User not found." });
         }
 
         var roles = await _userManager.GetRolesAsync(user);
@@ -90,7 +118,6 @@ public class UsersController : ControllerBase
         {
             Id = user.Id,
             Email = user.Email ?? string.Empty,
-            UserName = user.UserName ?? string.Empty,
             StoreId = user.StoreId,
             StoreCode = user.Store?.StoreCode,
             StoreName = user.Store?.StoreName,
@@ -103,71 +130,45 @@ public class UsersController : ControllerBase
 
     // POST: api/users
     [HttpPost]
-    public async Task<ActionResult<UserResponse>> CreateUser(
-        CreateUserRequest request)
+    public async Task<IActionResult> CreateUser(
+        [FromBody] CreateUserRequest request)
     {
-        var email = request.Email.Trim();
-        var role = request.Role.Trim();
-
-        if (string.IsNullOrWhiteSpace(email))
+        if (string.IsNullOrWhiteSpace(request.Email))
         {
-            return BadRequest(new
-            {
-                message = "Email is required."
-            });
+            return BadRequest(new { message = "Email is required." });
         }
 
-        if (string.IsNullOrWhiteSpace(role))
+        if (string.IsNullOrWhiteSpace(request.Role))
         {
-            return BadRequest(new
-            {
-                message = "Role is required."
-            });
+            return BadRequest(new { message = "Role is required." });
         }
 
-        // Validate role
-        if (!await _roleManager.RoleExistsAsync(role))
+        if (!await _roleManager.RoleExistsAsync(request.Role))
         {
-            return BadRequest(new
-            {
-                message = $"Role '{role}' does not exist."
-            });
+            return BadRequest(new { message = "Selected role does not exist." });
         }
-
-        // Validate store
-        StoreManagement.Api.Models.Store? store = null;
 
         if (request.StoreId.HasValue)
         {
-            store = await _db.Stores
-                .FirstOrDefaultAsync(x => x.Id == request.StoreId.Value);
+            var storeExists = await _db.Stores.AnyAsync(s =>
+                s.Id == request.StoreId.Value && s.IsActive);
 
-            if (store == null)
+            if (!storeExists)
             {
                 return BadRequest(new
                 {
-                    message = "Specified store does not exist."
-                });
-            }
-
-            if (!store.IsActive)
-            {
-                return BadRequest(new
-                {
-                    message = "Cannot assign a user to an inactive store."
+                    message = "Selected store does not exist or is inactive."
                 });
             }
         }
 
-        // Check duplicate email
+        var email = request.Email.Trim();
+
         var existingUser = await _userManager.FindByEmailAsync(email);
 
         if (existingUser != null)
         {
-            return Conflict(new
-            {
-                message = $"A user with email '{email}' already exists."
-            });
+            return Conflict(new { message = "Email is already registered." });
         }
 
         var user = new ApplicationUser
@@ -181,37 +182,57 @@ public class UsersController : ControllerBase
         };
 
         var createResult = await _userManager.CreateAsync(
-            user,
-            request.Password);
+            user, request.Password);
 
         if (!createResult.Succeeded)
         {
             return BadRequest(new
             {
-                message = "Unable to create user.",
-                errors = createResult.Errors
-                    .Select(x => x.Description)
-                    .ToList()
+                errors = createResult.Errors.Select(e => e.Description)
             });
         }
 
         var roleResult = await _userManager.AddToRoleAsync(
-            user,
-            role);
+            user, request.Role);
 
         if (!roleResult.Succeeded)
         {
-            // Remove the user if role assignment fails.
-            await _userManager.DeleteAsync(user);
+            // Compensate for the successful user creation.
+            var deleteResult = await _userManager.DeleteAsync(user);
+
+            if (!deleteResult.Succeeded)
+            {
+                return StatusCode(500, new
+                {
+                    message = "The role assignment failed and the newly created user could not be removed.",
+                    errors = roleResult.Errors.Select(e => e.Description),
+                    cleanupErrors = deleteResult.Errors.Select(e => e.Description)
+                });
+            }
 
             return BadRequest(new
             {
-                message = "Unable to assign role.",
-                errors = roleResult.Errors
-                    .Select(x => x.Description)
-                    .ToList()
+                errors = roleResult.Errors.Select(e => e.Description)
             });
         }
+
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            user.Id,
+            "CREATE",
+            null,
+            new
+            {
+                user.Email,
+                user.StoreId,
+                Role = request.Role,
+                user.IsActive
+            }));
+
+        await _db.SaveChangesAsync();
+
+        var store = user.StoreId.HasValue
+            ? await _db.Stores.FindAsync(user.StoreId.Value)
+            : null;
 
         return CreatedAtAction(
             nameof(GetUser),
@@ -219,12 +240,11 @@ public class UsersController : ControllerBase
             new UserResponse
             {
                 Id = user.Id,
-                Email = user.Email,
-                UserName = user.UserName ?? string.Empty,
+                Email = user.Email ?? string.Empty,
                 StoreId = user.StoreId,
                 StoreCode = store?.StoreCode,
                 StoreName = store?.StoreName,
-                Role = role,
+                Role = request.Role,
                 IsActive = user.IsActive,
                 CreatedAtUtc = user.CreatedAtUtc,
                 UpdatedAtUtc = user.UpdatedAtUtc
@@ -233,72 +253,84 @@ public class UsersController : ControllerBase
 
     // PUT: api/users/{id}
     [HttpPut("{id}")]
-    public async Task<ActionResult<UserResponse>> UpdateUser(
+    public async Task<IActionResult> UpdateUser(
         string id,
-        UpdateUserRequest request)
+        [FromBody] UpdateUserRequest request)
     {
-        var user = await _userManager.Users
-            .Include(x => x.Store)
-            .FirstOrDefaultAsync(x => x.Id == id);
+        var user = await _db.Users
+            .Include(u => u.Store)
+            .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user == null)
         {
-            return NotFound(new
-            {
-                message = "User not found."
-            });
+            return NotFound(new { message = "User not found." });
         }
 
-        var email = request.Email.Trim();
-        var role = request.Role.Trim();
-
-        if (!await _roleManager.RoleExistsAsync(role))
+        if (string.IsNullOrWhiteSpace(request.Email))
         {
-            return BadRequest(new
-            {
-                message = $"Role '{role}' does not exist."
-            });
+            return BadRequest(new { message = "Email is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Role))
+        {
+            return BadRequest(new { message = "Role is required." });
+        }
+
+        if (!await _roleManager.RoleExistsAsync(request.Role))
+        {
+            return BadRequest(new { message = "Selected role does not exist." });
         }
 
         if (request.StoreId.HasValue)
         {
-            var store = await _db.Stores
-                .FirstOrDefaultAsync(x => x.Id == request.StoreId.Value);
+            var storeExists = await _db.Stores.AnyAsync(s =>
+                s.Id == request.StoreId.Value && s.IsActive);
 
-            if (store == null)
+            if (!storeExists)
             {
                 return BadRequest(new
                 {
-                    message = "Specified store does not exist."
-                });
-            }
-
-            if (!store.IsActive)
-            {
-                return BadRequest(new
-                {
-                    message = "Cannot assign a user to an inactive store."
+                    message = "Selected store does not exist or is inactive."
                 });
             }
         }
 
-        var duplicateEmail = await _userManager.Users
-            .AnyAsync(x =>
-                x.Id != id &&
-                x.NormalizedEmail == email.ToUpper());
+        var email = request.Email.Trim();
 
-        if (duplicateEmail)
+        var duplicateEmail = await _userManager.FindByEmailAsync(email);
+
+        if (duplicateEmail != null && duplicateEmail.Id != user.Id)
         {
-            return Conflict(new
-            {
-                message = $"A user with email '{email}' already exists."
-            });
+            return Conflict(new { message = "Email is already registered." });
+        }
+
+        var currentRoles = await _userManager.GetRolesAsync(user);
+        var oldRole = currentRoles.FirstOrDefault() ?? string.Empty;
+
+        var oldValues = new
+        {
+            user.Email,
+            user.StoreId,
+            Role = oldRole
+        };
+
+        var emailChanged = !string.Equals(
+            user.Email, email, StringComparison.OrdinalIgnoreCase);
+
+        var storeChanged = user.StoreId != request.StoreId;
+
+        var roleChanged = !string.Equals(
+            oldRole, request.Role, StringComparison.Ordinal);
+
+        if (!emailChanged && !storeChanged && !roleChanged)
+        {
+            return await GetUser(id);
         }
 
         user.Email = email;
         user.UserName = email;
-        user.NormalizedEmail = email.ToUpper();
-        user.NormalizedUserName = email.ToUpper();
+        user.NormalizedEmail = _userManager.NormalizeEmail(email);
+        user.NormalizedUserName = _userManager.NormalizeName(email);
         user.StoreId = request.StoreId;
         user.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -308,61 +340,61 @@ public class UsersController : ControllerBase
         {
             return BadRequest(new
             {
-                message = "Unable to update user.",
-                errors = updateResult.Errors
-                    .Select(x => x.Description)
-                    .ToList()
+                errors = updateResult.Errors.Select(e => e.Description)
             });
         }
 
-        var currentRoles = await _userManager.GetRolesAsync(user);
-
-        if (currentRoles.Any())
+        if (roleChanged)
         {
-            var removeResult = await _userManager.RemoveFromRolesAsync(
-                user,
-                currentRoles);
+            if (currentRoles.Count > 0)
+            {
+                var removeResult = await _userManager.RemoveFromRolesAsync(
+                    user, currentRoles);
 
-            if (!removeResult.Succeeded)
+                if (!removeResult.Succeeded)
+                {
+                    return BadRequest(new
+                    {
+                        errors = removeResult.Errors.Select(e => e.Description)
+                    });
+                }
+            }
+
+            var addResult = await _userManager.AddToRoleAsync(
+                user, request.Role);
+
+            if (!addResult.Succeeded)
             {
                 return BadRequest(new
                 {
-                    message = "Unable to update user roles.",
-                    errors = removeResult.Errors
-                        .Select(x => x.Description)
-                        .ToList()
+                    errors = addResult.Errors.Select(e => e.Description)
                 });
             }
         }
 
-        var addRoleResult = await _userManager.AddToRoleAsync(
-            user,
-            role);
-
-        if (!addRoleResult.Succeeded)
-        {
-            return BadRequest(new
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            user.Id,
+            "UPDATE",
+            oldValues,
+            new
             {
-                message = "Unable to assign role.",
-                errors = addRoleResult.Errors
-                    .Select(x => x.Description)
-                    .ToList()
-            });
-        }
+                user.Email,
+                user.StoreId,
+                Role = request.Role
+            }));
 
-        await _db.Entry(user)
-            .Reference(x => x.Store)
-            .LoadAsync();
+        await _db.SaveChangesAsync();
+
+        await _db.Entry(user).Reference(u => u.Store).LoadAsync();
 
         return Ok(new UserResponse
         {
             Id = user.Id,
             Email = user.Email ?? string.Empty,
-            UserName = user.UserName ?? string.Empty,
             StoreId = user.StoreId,
             StoreCode = user.Store?.StoreCode,
             StoreName = user.Store?.StoreName,
-            Role = role,
+            Role = request.Role,
             IsActive = user.IsActive,
             CreatedAtUtc = user.CreatedAtUtc,
             UpdatedAtUtc = user.UpdatedAtUtc
@@ -371,13 +403,11 @@ public class UsersController : ControllerBase
 
     // GET: api/users/roles
     [HttpGet("roles")]
-    public async Task<ActionResult<IEnumerable<string>>> GetRoles()
+    public async Task<IActionResult> GetRoles()
     {
         var roles = await _roleManager.Roles
-            .AsNoTracking()
-            .Select(x => x.Name!)
-            .Where(x => x != null)
-            .OrderBy(x => x)
+            .OrderBy(r => r.Name)
+            .Select(r => r.Name)
             .ToListAsync();
 
         return Ok(roles);
@@ -387,41 +417,55 @@ public class UsersController : ControllerBase
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateUserStatus(
         string id,
-        UpdateUserStatusRequest request)
+        [FromBody] UpdateUserStatusRequest request)
     {
         var user = await _userManager.FindByIdAsync(id);
 
         if (user == null)
         {
-            return NotFound(new
+            return NotFound(new { message = "User not found." });
+        }
+
+        if (user.IsActive == request.IsActive)
+        {
+            return Ok(new
             {
-                message = "User not found."
+                user.Id,
+                user.IsActive,
+                message = "User status is unchanged."
             });
         }
+
+        var oldValues = new { user.IsActive };
 
         user.IsActive = request.IsActive;
         user.UpdatedAtUtc = DateTime.UtcNow;
 
-        var result = await _userManager.UpdateAsync(user);
+        var updateResult = await _userManager.UpdateAsync(user);
 
-        if (!result.Succeeded)
+        if (!updateResult.Succeeded)
         {
             return BadRequest(new
             {
-                message = "Unable to update user status.",
-                errors = result.Errors
-                    .Select(x => x.Description)
-                    .ToList()
+                errors = updateResult.Errors.Select(e => e.Description)
             });
         }
 
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            user.Id,
+            request.IsActive ? "ACTIVATE" : "DEACTIVATE",
+            oldValues,
+            new { user.IsActive }));
+
+        await _db.SaveChangesAsync();
+
         return Ok(new
         {
+            user.Id,
+            user.IsActive,
             message = request.IsActive
-                ? "User activated."
-                : "User deactivated.",
-            userId = user.Id,
-            isActive = user.IsActive
+                ? "User activated successfully."
+                : "User deactivated successfully."
         });
     }
 
@@ -429,39 +473,47 @@ public class UsersController : ControllerBase
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(
         string id,
-        ResetPasswordRequest request)
+        [FromBody] ResetPasswordRequest request)
     {
         var user = await _userManager.FindByIdAsync(id);
 
         if (user == null)
         {
-            return NotFound(new
-            {
-                message = "User not found."
-            });
+            return NotFound(new { message = "User not found." });
         }
 
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
 
-        var result = await _userManager.ResetPasswordAsync(
-            user,
-            token,
-            request.NewPassword);
+        var resetResult = await _userManager.ResetPasswordAsync(
+            user, token, request.NewPassword);
 
-        if (!result.Succeeded)
+        if (!resetResult.Succeeded)
         {
             return BadRequest(new
             {
-                message = "Unable to reset password.",
-                errors = result.Errors
-                    .Select(x => x.Description)
-                    .ToList()
+                errors = resetResult.Errors.Select(e => e.Description)
             });
         }
 
         user.UpdatedAtUtc = DateTime.UtcNow;
 
-        await _userManager.UpdateAsync(user);
+        var updateResult = await _userManager.UpdateAsync(user);
+
+        if (!updateResult.Succeeded)
+        {
+            return BadRequest(new
+            {
+                errors = updateResult.Errors.Select(e => e.Description)
+            });
+        }
+
+        _db.Set<AuditLog>().Add(CreateAuditLog(
+            user.Id,
+            "RESET_PASSWORD",
+            null,
+            new { PasswordReset = true }));
+
+        await _db.SaveChangesAsync();
 
         return Ok(new
         {

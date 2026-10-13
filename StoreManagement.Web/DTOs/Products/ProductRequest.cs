@@ -15,4 +15,5 @@ public class ProductRequest
 
     public int? BrandId { get; set; }
     public int? CategoryId { get; set; }
+    public bool NonExchangeable { get; set; } = false;
 }
