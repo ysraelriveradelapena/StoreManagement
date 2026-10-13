@@ -4,10 +4,12 @@
 
 @using MudBlazor
 @using StoreManagement.Web.Services
+@using System.Net.Http
 
 @inject AuthService AuthService
 @inject AuthState AuthState
 @inject NavigationManager Navigation
+@inject ILogger<Login> Logger
 
 <PageTitle>Login - Store Management</PageTitle>
 
@@ -15,46 +17,29 @@
 
 <div style="width:100vw; min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0f1117; padding:24px; box-sizing:border-box;">
 
-    <div style="width:400px; max-width:400px; min-width:400px; padding:36px; box-sizing:border-box; background:#151821; border-radius:16px;">
-
-        <!-- Logo -->
+    <div style="width:400px; max-width:100%; padding:36px; box-sizing:border-box; background:#151821; border-radius:16px;">
 
         <div style="display:flex; justify-content:center; margin-bottom:16px;">
-
-            <MudAvatar Size="Size.Large"
-                       Color="Color.Primary">
-
+            <MudAvatar Size="Size.Large" Color="Color.Primary">
                 <MudIcon Icon="@Icons.Material.Filled.Store"
                          Size="Size.Medium" />
-
             </MudAvatar>
-
         </div>
-
-        <!-- Title -->
 
         <MudText Typo="Typo.h5"
                  Align="Align.Center"
                  Class="mb-1">
-
             Store Management
-
         </MudText>
 
         <MudText Typo="Typo.body2"
                  Color="Color.Secondary"
                  Align="Align.Center"
                  Class="mb-6">
-
             Sign in to your account
-
         </MudText>
 
-        <!-- Login Form -->
-
-        <div style="width:320px; max-width:100%; margin:0 auto;">
-
-            <!-- Email -->
+        <div style="width:100%; max-width:320px; margin:0 auto;">
 
             <MudTextField T="string"
                           @bind-Value="_email"
@@ -63,38 +48,28 @@
                           Variant="Variant.Outlined"
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Email"
-                          Style="width:320px; max-width:100%;"
+                          FullWidth="true"
                           Class="mb-4" />
-
-            <!-- Password -->
 
             <MudTextField T="string"
                           @bind-Value="_password"
                           Label="Password"
                           Placeholder="Enter your password"
                           Variant="Variant.Outlined"
-                          InputType="@(_showPassword
-                                                        ? InputType.Text
-                                                        : InputType.Password)"
+                          InputType="@(_showPassword ? InputType.Text : InputType.Password)"
                           Adornment="Adornment.End"
                           AdornmentIcon="@(_showPassword
                                                         ? Icons.Material.Filled.VisibilityOff
                                                         : Icons.Material.Filled.Visibility)"
                           OnAdornmentClick="TogglePassword"
-                          Style="width:320px; max-width:100%;"
+                          FullWidth="true"
                           Class="mb-2" />
 
-            <!-- Forgot Password -->
-
-            <div style="width:320px; max-width:100%; text-align:right; margin-top:4px;">
-
+            <div style="text-align:right; margin-top:4px;">
                 <MudLink Href="/forgot-password">
                     Forgot password?
                 </MudLink>
-
             </div>
-
-            <!-- Login Button -->
 
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
@@ -122,43 +97,50 @@
 
             </MudButton>
 
-            <!-- Error -->
-            @if (!string.IsNullOrEmpty(_errorMessage))
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
             {
                 <MudAlert Severity="Severity.Error"
                           Variant="Variant.Filled"
                           Dense="true"
                           Class="mt-4">
-
                     @_errorMessage
-
                 </MudAlert>
             }
 
         </div>
 
-        <!-- Footer -->
-
         <MudText Typo="Typo.caption"
                  Color="Color.Secondary"
                  Align="Align.Center"
                  Class="mt-6">
-
             Store Management System
-
         </MudText>
 
     </div>
-
 </div>
 
 @code {
-
     private string _email = "admin@storemanagement.local";
     private string _password = "Admin123!";
-    private bool _showPassword = false;
-    private bool _loading = false;
+
+    private bool _showPassword;
+    private bool _loading;
+
     private string _errorMessage = "";
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#6366F1",
+            Secondary = "#8B5CF6",
+            Background = "#0F1117",
+            Surface = "#151821",
+            TextPrimary = "#F9FAFB",
+            TextSecondary = "#9CA3AF",
+            Divider = "#252936"
+        }
+    };
 
     private void TogglePassword()
     {
@@ -167,6 +149,11 @@
 
     private async Task LoginAsync()
     {
+        if (_loading)
+        {
+            return;
+        }
+
         _errorMessage = "";
 
         if (string.IsNullOrWhiteSpace(_email))
@@ -185,50 +172,56 @@
 
         try
         {
+            Logger.LogInformation(
+                "Login attempt started for {Email}.",
+                _email.Trim());
+
             var success = await AuthService.LoginAsync(
                 _email.Trim(),
                 _password);
 
             if (!success)
             {
-                _errorMessage = "Invalid email or password.";
+                _errorMessage =
+                    "Invalid email or password.";
+
+                Logger.LogWarning(
+                    "Login was unsuccessful for {Email}.",
+                    _email.Trim());
+
                 return;
             }
 
-            System.Diagnostics.Debug.WriteLine(
-                $"[Login] Token saved: {!string.IsNullOrWhiteSpace(AuthService.Token)}");
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[Login] AuthState token available: {!string.IsNullOrWhiteSpace(AuthState.Token)}");
+            Logger.LogInformation(
+                "Login succeeded for {Email}. Token available: {HasToken}.",
+                _email.Trim(),
+                !string.IsNullOrWhiteSpace(AuthService.Token));
 
             AuthState.NotifyAuthenticationStateChanged();
+
             Navigation.NavigateTo("/home");
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
-            _errorMessage = "Unable to connect to the server.";
+            Logger.LogError(
+                ex,
+                "HTTP error during login.");
+
+            _errorMessage =
+                $"Unable to connect to the server: {ex.Message}";
         }
         catch (Exception ex)
         {
-            _errorMessage = $"An unexpected error occurred: {ex.Message}";
+            Logger.LogError(
+                ex,
+                "Unexpected error during login.");
+
+            _errorMessage =
+                $"Login error: {ex.Message}";
         }
         finally
         {
             _loading = false;
         }
     }
-
-    private readonly MudTheme _theme = new MudTheme()
-    {
-        PaletteDark = new PaletteDark()
-        {
-            Primary = "#6366F1",
-            Secondary = "#8B5CF6",
-            Background = "#0F1117",
-            Surface = "#151821",
-            TextPrimary = "#F9FAFB",
-            TextSecondary = "#9CA3AF",
-            Divider = "#252936"
-        }
-    };
 }

@@ -1,10 +1,16 @@
 ﻿@inherits LayoutComponentBase
+@implements IAsyncDisposable
+
+@using Microsoft.AspNetCore.Components.Routing
 @using MudBlazor
 @using StoreManagement.Web.Services
+@using StoreManagement.Web.DTOs.Devices
 
 @inject AuthService AuthService
 @inject AuthState AuthState
+@inject ApiService ApiService
 @inject NavigationManager Navigation
+@inject ILogger<MainLayout> Logger
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
 
@@ -14,25 +20,30 @@
 
 <MudLayout>
 
-    <!-- Top App Bar -->
     <MudAppBar Elevation="1" Color="Color.Dark">
 
         <MudIconButton Icon="@Icons.Material.Filled.Menu"
                        Color="Color.Inherit"
-                       Edge="Edge.Start" />
+                       Edge="Edge.Start"
+                       OnClick="ToggleDrawer" />
 
-        <MudText Typo="Typo.h6">
-            Store Management
-        </MudText>
+        <MudText Typo="Typo.h6">Store Management</MudText>
 
         <MudSpacer />
 
-        <MudIconButton Icon="@Icons.Material.Filled.Notifications"
-                       Color="Color.Inherit" />
+        <MudBadge Content="@_pendingDeviceRequests"
+                  Color="Color.Error"
+                  Visible="@(_pendingDeviceRequests > 0)"
+                  Overlap="true">
 
-        <MudDivider Vertical="true"
-                    FlexItem="true"
-                    Class="mx-2" />
+            <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                           Color="Color.Inherit"
+                           Title="@GetNotificationTitle()"
+                           OnClick="OpenDeviceRegistrationRequests" />
+
+        </MudBadge>
+
+        <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
 
         <MudMenu Icon="@Icons.Material.Filled.AccountCircle"
                  Color="Color.Inherit"
@@ -44,8 +55,7 @@
                     @GetUserName()
                 </MudText>
 
-                <MudText Typo="Typo.caption"
-                         Color="Color.Secondary">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
                     @GetUserRole()
                 </MudText>
             </MudMenuItem>
@@ -61,31 +71,33 @@
 
     </MudAppBar>
 
-    <!-- Sidebar -->
-    <MudDrawer Open="true"
+    <MudDrawer @bind-Open="_drawerOpen"
                Variant="DrawerVariant.Responsive"
+               Breakpoint="Breakpoint.Md"
                Elevation="2"
-               Color="Color.Dark">
-
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6" Class="px-4">
-                Store Management
-            </MudText>
-        </MudDrawerHeader>
+               Color="Color.Dark"
+               ClipMode="DrawerClipMode.Always">
 
         <MudNavMenu>
 
-            <!-- Dashboard -->
-            <MudNavLink Href="/"
+            <MudText Typo="Typo.overline"
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                OVERVIEW
+            </MudText>
+
+            <MudNavLink Href="/home"
                         Match="NavLinkMatch.All"
                         Icon="@Icons.Material.Filled.Dashboard">
                 Dashboard
             </MudNavLink>
 
-            <!-- Masters -->
+            <MudDivider Class="my-2" />
+
             <MudText Typo="Typo.overline"
-                     Class="px-4 mt-4 mb-2">
-                Masters
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                CATALOG
             </MudText>
 
             <MudNavLink Href="/products"
@@ -94,12 +106,12 @@
             </MudNavLink>
 
             <MudNavLink Href="/brands"
-                        Icon="@Icons.Material.Filled.Business">
+                        Icon="@Icons.Material.Filled.Category">
                 Brands
             </MudNavLink>
 
             <MudNavLink Href="/categories"
-                        Icon="@Icons.Material.Filled.Category">
+                        Icon="@Icons.Material.Filled.Folder">
                 Categories
             </MudNavLink>
 
@@ -108,63 +120,76 @@
                 Reason Codes
             </MudNavLink>
 
-            <!-- Inventory -->
+            <MudDivider Class="my-2" />
+
             <MudText Typo="Typo.overline"
-                     Class="px-4 mt-4 mb-2">
-                Inventory
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                INVENTORY
             </MudText>
 
             <MudNavLink Href="/inventory"
                         Icon="@Icons.Material.Filled.Warehouse">
-                Stock
+                Inventory
             </MudNavLink>
 
-            <MudNavLink Href="/inventory/receiving"
+            <MudNavLink Href="/receiving"
                         Icon="@Icons.Material.Filled.MoveToInbox">
                 Receiving
             </MudNavLink>
 
-            <MudNavLink Href="/inventory/adjustments"
+            <MudNavLink Href="/adjustments"
                         Icon="@Icons.Material.Filled.Tune">
                 Adjustments
             </MudNavLink>
 
-            <MudNavLink Href="/inventory/transfers"
+            <MudNavLink Href="/transfers"
                         Icon="@Icons.Material.Filled.SwapHoriz">
                 Transfers
             </MudNavLink>
 
-            <!-- Sales -->
+            <MudDivider Class="my-2" />
+
             <MudText Typo="Typo.overline"
-                     Class="px-4 mt-4 mb-2">
-                Sales
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                SALES
             </MudText>
 
             <MudNavLink Href="/sales"
                         Icon="@Icons.Material.Filled.PointOfSale">
-                Sales History
+                Sales
             </MudNavLink>
 
-            <MudNavLink Href="/sales/returns"
+            <MudNavLink Href="/returns"
                         Icon="@Icons.Material.Filled.AssignmentReturn">
                 Returns
             </MudNavLink>
 
-            <!-- Reports -->
+            <MudDivider Class="my-2" />
+
             <MudText Typo="Typo.overline"
-                     Class="px-4 mt-4 mb-2">
-                Reports
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                REPORTS
             </MudText>
 
             <MudNavLink Href="/reports"
-                        Icon="@Icons.Material.Filled.BarChart">
+                        Icon="@Icons.Material.Filled.Assessment">
                 Reports
             </MudNavLink>
 
-            <!-- Administration -->
+            <MudNavLink Href="/audit"
+                        Icon="@Icons.Material.Filled.History">
+                Audit
+            </MudNavLink>
+
+            <MudDivider Class="my-2" />
+
             <MudText Typo="Typo.overline"
-                     Class="px-4 mt-4 mb-2">
-                Administration
+                     Class="px-4 mt-4 mb-2"
+                     Color="Color.Secondary">
+                ADMINISTRATION
             </MudText>
 
             <MudNavLink Href="/users"
@@ -182,70 +207,148 @@
                 Devices
             </MudNavLink>
 
-            <MudNavLink Href="/audit"
-                        Icon="@Icons.Material.Filled.History">
-                Audit Logs
+            <MudNavLink Href="/device-registration-requests"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Approval">
+
+                <MudStack Row="true"
+                          AlignItems="AlignItems.Center"
+                          Justify="Justify.SpaceBetween"
+                          Spacing="2">
+
+                    <MudText Typo="Typo.body2">
+                        Device Registration Requests
+                    </MudText>
+
+                    @if (_pendingDeviceRequests > 0)
+                    {
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="Color.Error"
+                                 Variant="Variant.Filled">
+                            @_pendingDeviceRequests
+                        </MudChip>
+                    }
+
+                </MudStack>
+
             </MudNavLink>
 
         </MudNavMenu>
 
     </MudDrawer>
 
-    <!-- Main Content -->
-    <MudMainContent Class="app-main-content">
-
-        <MudContainer MaxWidth="MaxWidth.False"
-                      Class="pa-6 app-content">
-
+    <MudMainContent>
+        <div class="store-page-container">
             @Body
-
-        </MudContainer>
-
+        </div>
     </MudMainContent>
 
 </MudLayout>
 
 @code {
+    private bool _drawerOpen = true;
 
-    private readonly MudTheme _theme = new MudTheme()
+    private int _pendingDeviceRequests;
+
+    private readonly CancellationTokenSource _pollingCancellation = new();
+
+    private Task? _pollingTask;
+
+    private readonly MudTheme _theme = new()
     {
-        PaletteDark = new PaletteDark()
+        PaletteDark = new PaletteDark
         {
             Primary = "#6366F1",
             Secondary = "#8B5CF6",
-
             Background = "#0F1117",
             Surface = "#151821",
-
             DrawerBackground = "#11131A",
             DrawerText = "#D1D5DB",
-
             AppbarBackground = "#151821",
             AppbarText = "#FFFFFF",
-
             TextPrimary = "#F9FAFB",
             TextSecondary = "#9CA3AF",
-
             ActionDefault = "#9CA3AF",
             Divider = "#252936"
         }
     };
 
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshPendingDeviceRequestsAsync();
+
+        _pollingTask = PollPendingDeviceRequestsAsync();
+    }
+
+    private async Task PollPendingDeviceRequestsAsync()
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(
+                TimeSpan.FromSeconds(30));
+
+            while (await timer.WaitForNextTickAsync(
+                _pollingCancellation.Token))
+            {
+                await RefreshPendingDeviceRequestsAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal when the layout is disposed.
+        }
+    }
+
+    private async Task RefreshPendingDeviceRequestsAsync()
+    {
+        try
+        {
+            var requests =
+                await ApiService.GetAsync<List<DeviceRegistrationRequestDto>>(
+                    "api/device-registration-requests?status=Pending");
+
+            var newCount = requests?.Count ?? 0;
+
+            if (newCount != _pendingDeviceRequests)
+            {
+                _pendingDeviceRequests = newCount;
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore cancellation during shutdown.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(
+                ex,
+                "Unable to refresh pending device registration requests.");
+        }
+    }
+
+    private string GetNotificationTitle()
+    {
+        return _pendingDeviceRequests == 1
+            ? "1 pending device registration request"
+            : $"{_pendingDeviceRequests} pending device registration requests";
+    }
+
+    private void OpenDeviceRegistrationRequests()
+    {
+        Navigation.NavigateTo("/device-registration-requests");
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
     private string GetUserName()
     {
         return AuthState.CurrentUser?.UserName ?? "Guest";
-    }
-
-    private string GetInitial()
-    {
-        var userName = AuthState.CurrentUser?.UserName;
-
-        if (string.IsNullOrWhiteSpace(userName))
-        {
-            return "?";
-        }
-
-        return userName.Substring(0, 1).ToUpper();
     }
 
     private string GetUserRole()
@@ -260,5 +363,17 @@
         AuthState.NotifyAuthenticationStateChanged();
 
         Navigation.NavigateTo("/login");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _pollingCancellation.CancelAsync();
+
+        if (_pollingTask is not null)
+        {
+            await _pollingTask;
+        }
+
+        _pollingCancellation.Dispose();
     }
 }

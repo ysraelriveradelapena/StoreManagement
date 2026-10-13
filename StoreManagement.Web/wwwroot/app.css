@@ -1,4 +1,4 @@
-```css
+
 /* =========================
    GLOBAL LAYOUT
    ========================= */
@@ -16,7 +16,6 @@ html {
 
 body {
     min-height: 100vh;
-    overflow-x: hidden;
     font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: #0f1117;
     color: #e5e7eb;
@@ -27,8 +26,11 @@ body {
 }
 
 .app-main-content {
-    width: 100%;
+    width: 0;
     min-width: 0;
+    max-width: 100%;
+    flex: 1 1 auto;
+    box-sizing: border-box;
 }
 
 .app-content {
@@ -244,4 +246,34 @@ body {
     }
 }
 
-```
+/* Page content */
+.store-page-container {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 24px;
+}
+
+    /* Allow tables to scroll horizontally */
+    .store-page-container .mud-table-container {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        box-sizing: border-box;
+    }
+
+/* Responsive page padding */
+@media (max-width: 960px) {
+    .store-page-container {
+        padding: 16px;
+    }
+}
+
+@media (max-width: 600px) {
+    .store-page-container {
+        padding: 12px;
+    }
+}
+
+

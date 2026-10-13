@@ -1,0 +1,370 @@
+﻿@page "/device-registration-requests"
+
+@using MudBlazor
+@using StoreManagement.Web.DTOs.Devices
+@using StoreManagement.Web.Services
+
+@inject ApiService ApiService
+@inject AuthState AuthState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Class="pa-4">
+
+        <MudStack Row="true"
+                  AlignItems="AlignItems.Center"
+                  Justify="Justify.SpaceBetween"
+                  Class="mb-4">
+
+            <MudText Typo="Typo.h5">
+                Device Registration Requests
+            </MudText>
+
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="LoadRequests">
+                Refresh
+            </MudButton>
+        </MudStack>
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+
+            <MudSelect T="string"
+                       Label="Status"
+                       Value="_status"
+                       ValueChanged="OnStatusChanged"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       Style="max-width: 220px">
+
+                <MudSelectItem T="string" Value="@("Pending")">
+                    Pending
+                </MudSelectItem>
+
+                <MudSelectItem T="string" Value="@("Approved")">
+                    Approved
+                </MudSelectItem>
+
+                <MudSelectItem T="string" Value="@("Rejected")">
+                    Rejected
+                </MudSelectItem>
+
+                <MudSelectItem T="string" Value="@("All")">
+                    All
+                </MudSelectItem>
+
+            </MudSelect>
+
+        </MudStack>
+
+        @if (!string.IsNullOrWhiteSpace(_generatedSecret))
+        {
+            <MudAlert Severity="Severity.Warning"
+                      Variant="Variant.Outlined"
+                      Class="mb-4"
+                      ShowCloseIcon="true"
+                      CloseIconClicked="ClearGeneratedSecret">
+
+                <MudText Typo="Typo.subtitle1">
+                    Device approved — save this secret now
+                </MudText>
+
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    This secret is displayed only in this response.
+                    Copy it to a secure location before leaving this page.
+                </MudText>
+
+                <MudText Typo="Typo.body2">
+                    Device code: @_generatedCode
+                </MudText>
+
+                <MudTextField T="string"
+                              Label="Device Secret"
+                              Value="_generatedSecret"
+                              ReadOnly="true"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                              OnAdornmentClick="CopySecret" />
+
+                <MudText Typo="Typo.caption">
+                    Device ID: @_generatedDeviceId
+                </MudText>
+            </MudAlert>
+        }
+
+        <MudTable T="DeviceRegistrationRequestDto"
+                  Items="_requests"
+                  Loading="_loading"
+                  Hover="true"
+                  Dense="true"
+                  Striped="true">
+
+            <HeaderContent>
+                <MudTh>ID</MudTh>
+                <MudTh>Device Code</MudTh>
+                <MudTh>Device Name</MudTh>
+                <MudTh>Store</MudTh>
+                <MudTh>Requested (UTC)</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+
+            <RowTemplate>
+                <MudTd DataLabel="ID">@context.Id</MudTd>
+                <MudTd DataLabel="Device Code">@context.Code</MudTd>
+                <MudTd DataLabel="Device Name">@context.Name</MudTd>
+                <MudTd DataLabel="Store">@context.StoreName</MudTd>
+
+                <MudTd DataLabel="Requested">
+                    @context.RequestedAtUtc.ToString("yyyy-MM-dd HH:mm:ss")
+                </MudTd>
+
+                <MudTd DataLabel="Status">
+                    <MudChip T="string"
+                             Size="Size.Small"
+                             Color="@GetStatusColor(context.Status)">
+                        @context.Status
+                    </MudChip>
+                </MudTd>
+
+                <MudTd DataLabel="Actions">
+                    @if (context.Status == "Pending")
+                    {
+                        <MudButton Size="Size.Small"
+                                   Color="Color.Success"
+                                   Variant="Variant.Filled"
+                                   Disabled="_processing"
+                                   OnClick="@(() => ApproveRequest(context))">
+                            Approve
+                        </MudButton>
+
+                        <MudButton Size="Size.Small"
+                                   Color="Color.Error"
+                                   Variant="Variant.Outlined"
+                                   Class="ml-2"
+                                   Disabled="_processing"
+                                   OnClick="@(() => RejectRequest(context))">
+                            Reject
+                        </MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+
+            <NoRecordsContent>
+                <MudText Class="pa-4">
+                    No registration requests found.
+                </MudText>
+            </NoRecordsContent>
+
+        </MudTable>
+
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<DeviceRegistrationRequestDto> _requests = new();
+
+    private string _status = "Pending";
+    private bool _loading;
+    private bool _processing;
+
+    private string? _generatedSecret;
+    private string? _generatedCode;
+    private int? _generatedDeviceId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await AuthState.InitializeAsync();
+
+        if (string.IsNullOrWhiteSpace(AuthState.Token))
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadRequests();
+        StateHasChanged();
+    }
+
+    private async Task LoadRequests()
+    {
+        try
+        {
+            _loading = true;
+
+            var url =
+                $"api/device-registration-requests?status={Uri.EscapeDataString(_status)}";
+
+            var result =
+                await ApiService.GetAsync<List<DeviceRegistrationRequestDto>>(url);
+
+            _requests = result ?? new List<DeviceRegistrationRequestDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Failed to load registration requests: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApproveRequest(
+        DeviceRegistrationRequestDto request)
+    {
+        try
+        {
+            _processing = true;
+
+            var response = await ApiService.PostAsync(
+                $"api/device-registration-requests/{request.Id}/approve",
+                new { });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Approval failed: {error}",
+                    Severity.Error);
+
+                return;
+            }
+
+            var result =
+                await response.Content
+                    .ReadFromJsonAsync<ApproveDeviceRegistrationResponseDto>();
+
+            if (result == null ||
+                string.IsNullOrWhiteSpace(result.DeviceSecret))
+            {
+                Snackbar.Add(
+                    "The request was approved, but the device secret could not be read. Check the API response.",
+                    Severity.Warning);
+
+                await LoadRequests();
+                return;
+            }
+
+            _generatedSecret = result.DeviceSecret;
+            _generatedCode = result.DeviceCode;
+            _generatedDeviceId = result.DeviceId;
+
+            Snackbar.Add(
+                "Device approved. Save its secret now.",
+                Severity.Success);
+
+            await LoadRequests();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Approval failed: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private async Task RejectRequest(
+        DeviceRegistrationRequestDto request)
+    {
+        try
+        {
+            _processing = true;
+
+            var response = await ApiService.PostAsync(
+                $"api/device-registration-requests/{request.Id}/reject",
+                new RejectDeviceRegistrationRequestDto
+                {
+                    Notes = "Rejected through the admin website."
+                });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+
+                Snackbar.Add(
+                    $"Rejection failed: {error}",
+                    Severity.Error);
+
+                return;
+            }
+
+            Snackbar.Add(
+                "Device registration request rejected.",
+                Severity.Success);
+
+            await LoadRequests();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Rejection failed: {ex.Message}",
+                Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private Color GetStatusColor(string status)
+    {
+        return status switch
+        {
+            "Pending" => Color.Warning,
+            "Approved" => Color.Success,
+            "Rejected" => Color.Error,
+            _ => Color.Default
+        };
+    }
+
+    private async Task CopySecret()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_generatedSecret))
+                return;
+
+            await JS.InvokeVoidAsync(
+                "navigator.clipboard.writeText",
+                _generatedSecret);
+
+            Snackbar.Add(
+                "Device secret copied.",
+                Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add(
+                "Copy failed. Select and copy the secret manually.",
+                Severity.Warning);
+        }
+    }
+
+    private void ClearGeneratedSecret()
+    {
+        _generatedSecret = null;
+        _generatedCode = null;
+        _generatedDeviceId = null;
+    }
+
+    private async Task OnStatusChanged(string status)
+    {
+        _status = status;
+        await LoadRequests();
+    }
+
+}

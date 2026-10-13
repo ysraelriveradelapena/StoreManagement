@@ -12,145 +12,191 @@
 @inject ISnackbar Snackbar
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudStack Spacing="3">
-        <MudStack Row="true"
-                  AlignItems="AlignItems.Center"
-                  Justify="Justify.SpaceBetween">
-            <MudText Typo="Typo.h4">Products</MudText>
 
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="AddProduct">
-                Add Product
-            </MudButton>
+    <div style="width:100%; min-width:0;">
+
+        <MudStack Spacing="3">
+
+            @* RESPONSIVE PAGE HEADER *@
+            <MudStack Row="true"
+                      AlignItems="AlignItems.Center"
+                      Justify="Justify.SpaceBetween"
+                      FlexWrap="Wrap"
+                      Spacing="2">
+
+                <MudText Typo="Typo.h4">
+                    Products
+                </MudText>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="AddProduct">
+                    Add Product
+                </MudButton>
+
+            </MudStack>
+
+            @* SEARCH *@
+            <MudTextField T="string"
+                          @bind-Value="_search"
+                          Placeholder="Search product code, name, brand, or category..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Clearable="true"
+                          Variant="Variant.Outlined" />
+
+            @* FILTER *@
+            <MudCheckBox T="bool"
+                         @bind-Value="_showInactive"
+                         Label="Show inactive products"
+                         Color="Color.Primary" />
+
+            @if (_loading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else
+            {
+                @* RESPONSIVE TABLE CONTAINER *@
+                <div style="width:100%; max-width:100%; overflow-x:auto;">
+
+                    <MudTable Items="@FilteredProducts"
+                              Hover="true"
+                              Striped="true"
+                              Dense="true"
+                              Breakpoint="Breakpoint.Sm">
+
+                        <HeaderContent>
+
+                            <MudTh>Product Code</MudTh>
+                            <MudTh>Product Name</MudTh>
+                            <MudTh>Brand</MudTh>
+                            <MudTh>Category</MudTh>
+                            <MudTh>Exchange Policy</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Actions</MudTh>
+
+                        </HeaderContent>
+
+                        <RowTemplate>
+
+                            <MudTd DataLabel="Product Code">
+                                @context.ProductCode
+                            </MudTd>
+
+                            <MudTd DataLabel="Product Name">
+                                @context.Name
+                            </MudTd>
+
+                            <MudTd DataLabel="Brand">
+                                @(context.BrandName ?? "—")
+                            </MudTd>
+
+                            <MudTd DataLabel="Category">
+                                @(context.CategoryName ?? "—")
+                            </MudTd>
+
+                            <MudTd DataLabel="Exchange Policy">
+
+                                @if (context.NonExchangeable)
+                                {
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="Color.Warning"
+                                             Variant="Variant.Filled">
+                                        Non-Exchangeable
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="Color.Success"
+                                             Variant="Variant.Outlined">
+                                        Exchangeable
+                                    </MudChip>
+                                }
+
+                            </MudTd>
+
+                            <MudTd DataLabel="Status">
+
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Color="@(context.IsActive
+                                                                                      ? Color.Success
+                                                                                      : Color.Default)">
+
+                                @(context.IsActive ? "Active" : "Inactive")
+
+                                </MudChip>
+
+                            </MudTd>
+
+                            <MudTd DataLabel="Actions">
+
+                                <MudStack Row="true" Spacing="1">
+
+                                    <MudIconButton Icon="@Icons.Material.Filled.Layers"
+                                                   Color="Color.Info"
+                                                   Title="Manage variants"
+                                                   OnClick="@(() => ManageVariants(context))" />
+
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Color="Color.Primary"
+                                                   Title="Edit product"
+                                                   OnClick="@(() => EditProduct(context))" />
+
+                                    <MudIconButton Icon="@(context.IsActive
+                                                                                           ? Icons.Material.Filled.Block
+                                                                                           : Icons.Material.Filled.CheckCircle)"
+                                               Color="@(context.IsActive
+                                                                                           ? Color.Error
+                                                                                           : Color.Success)"
+                                               Title="@(context.IsActive
+                                                                                           ? "Deactivate product"
+                                                                                           : "Activate product")"
+                                               OnClick="@(() => ToggleStatus(context))" />
+
+                                </MudStack>
+
+                            </MudTd>
+
+                        </RowTemplate>
+
+                        <NoRecordsContent>
+                            <MudText Class="pa-4">
+                                No products found.
+                            </MudText>
+                        </NoRecordsContent>
+
+                        <PagerContent>
+                            <MudTablePager />
+                        </PagerContent>
+
+                    </MudTable>
+
+                </div>
+                        }
+
         </MudStack>
 
-        <MudTextField T="string"
-                      @bind-Value="_search"
-                      Placeholder="Search product code, name, brand, or category..."
-                      Adornment="Adornment.Start"
-                      AdornmentIcon="@Icons.Material.Filled.Search"
-                      Immediate="true"
-                      Clearable="true"
-                      Variant="Variant.Outlined" />
+    </div>
 
-        <MudCheckBox T="bool"
-                     @bind-Value="_showInactive"
-                     Label="Show inactive products"
-                     Color="Color.Primary" />
-
-        @if (_loading)
-        {
-            <MudProgressLinear Indeterminate="true" />
-        }
-        else
-        {
-            <MudTable Items="@FilteredProducts"
-                      Hover="true"
-                      Striped="true"
-                      Dense="true">
-                <HeaderContent>
-                    <MudTh>Product Code</MudTh>
-                    <MudTh>Product Name</MudTh>
-                    <MudTh>Brand</MudTh>
-                    <MudTh>Category</MudTh>
-                    <MudTh>Exchange Policy</MudTh>
-                    <MudTh>Status</MudTh>
-                    <MudTh>Actions</MudTh>
-                </HeaderContent>
-
-                <RowTemplate>
-                    <MudTd DataLabel="Product Code">
-                        @context.ProductCode
-                    </MudTd>
-
-                    <MudTd DataLabel="Product Name">
-                        @context.Name
-                    </MudTd>
-
-                    <MudTd DataLabel="Brand">
-                        @(context.BrandName ?? "—")
-                    </MudTd>
-
-                    <MudTd DataLabel="Category">
-                        @(context.CategoryName ?? "—")
-                    </MudTd>
-
-                    <MudTd DataLabel="Exchange Policy">
-                        @if (context.NonExchangeable)
-                        {
-                            <MudChip T="string"
-                                     Size="Size.Small"
-                                     Color="Color.Warning"
-                                     Variant="Variant.Filled">
-                                Non-Exchangeable
-                            </MudChip>
-                        }
-                        else
-                        {
-                            <MudChip T="string"
-                                     Size="Size.Small"
-                                     Color="Color.Success"
-                                     Variant="Variant.Outlined">
-                                Exchangeable
-                            </MudChip>
-                        }
-                    </MudTd>
-
-                    <MudTd DataLabel="Status">
-                        <MudChip T="string"
-                                 Size="Size.Small"
-                                 Color="@(context.IsActive
-                                                                      ? Color.Success
-                                                                      : Color.Default)">
-                        @(context.IsActive ? "Active" : "Inactive")
-                    </MudChip>
-                </MudTd>
-
-                    <MudTd DataLabel="Actions">
-                        <MudStack Row="true" Spacing="1">
-                            <MudIconButton Icon="@Icons.Material.Filled.Layers"
-                                           Color="Color.Info"
-                                           Title="Manage variants"
-                                           OnClick="@(() => ManageVariants(context))" />
-
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Color="Color.Primary"
-                                           Title="Edit product"
-                                           OnClick="@(() => EditProduct(context))" />
-
-                            <MudIconButton Icon="@(context.IsActive
-                                                                       ? Icons.Material.Filled.Block
-                                                                       : Icons.Material.Filled.CheckCircle)"
-                                       Color="@(context.IsActive
-                                                                                      ? Color.Error
-                                                                                      : Color.Success)"
-                                       Title="@(context.IsActive
-                                                                                      ? "Deactivate product"
-                                                                                      : "Activate product")"
-                                       OnClick="@(() => ToggleStatus(context))" />
-                    </MudStack>
-                </MudTd>
-            </RowTemplate>
-
-                <NoRecordsContent>
-                    <MudText Class="pa-4">No products found.</MudText>
-                </NoRecordsContent>
-
-                <PagerContent>
-                    <MudTablePager />
-                </PagerContent>
-            </MudTable>
-                }
-    </MudStack>
 </MudContainer>
 
 @code {
+
     private List<ProductDto> _products = new();
+
     private string _search = string.Empty;
+
     private bool _showInactive;
+
     private bool _loading = true;
+
 
     private IEnumerable<ProductDto> FilteredProducts =>
         _products.Where(x =>
@@ -164,6 +210,7 @@
                  _search, StringComparison.OrdinalIgnoreCase) ?? false) ||
              (x.CategoryName?.Contains(
                  _search, StringComparison.OrdinalIgnoreCase) ?? false)));
+
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -179,8 +226,10 @@
         }
 
         await LoadProducts();
+
         StateHasChanged();
     }
+
 
     private async Task LoadProducts()
     {
@@ -205,10 +254,12 @@
         }
     }
 
+
     private void ManageVariants(ProductDto product)
     {
         Navigation.NavigateTo($"/products/{product.Id}/variants");
     }
+
 
     private async Task AddProduct()
     {
@@ -231,6 +282,7 @@
         if (result is { Canceled: false })
             await LoadProducts();
     }
+
 
     private async Task EditProduct(ProductDto product)
     {
@@ -256,6 +308,7 @@
         if (result is { Canceled: false })
             await LoadProducts();
     }
+
 
     private async Task ToggleStatus(ProductDto product)
     {
@@ -294,4 +347,5 @@
                 Severity.Error);
         }
     }
+
 }

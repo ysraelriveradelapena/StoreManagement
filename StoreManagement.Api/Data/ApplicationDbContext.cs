@@ -49,6 +49,9 @@ public class ApplicationDbContext
     public DbSet<RefreshToken> RefreshTokens
         => Set<RefreshToken>();
 
+    public DbSet<DeviceRegistrationRequest> DeviceRegistrationRequests
+    => Set<DeviceRegistrationRequest>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -234,5 +237,58 @@ public class ApplicationDbContext
             .Property(x => x.PriceType)
             .HasMaxLength(30)
             .IsRequired();
+        builder.Entity<Device>(entity =>
+        {
+            entity.Property(x => x.Code)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(x => x.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(x => x.CredentialHash)
+                .HasMaxLength(64);
+
+            entity.HasIndex(x => x.Code)
+                .IsUnique();
+        });
+
+        builder.Entity<DeviceRegistrationRequest>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Code)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(x => x.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(x => x.Status)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            entity.Property(x => x.ReviewNotes)
+                .HasMaxLength(500);
+
+            entity.HasOne(x => x.Store)
+                .WithMany()
+                .HasForeignKey(x => x.StoreId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(x => x.RequestedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(x => new
+            {
+                x.Status,
+                x.RequestedAtUtc
+            });
+        });
     }
+
 }

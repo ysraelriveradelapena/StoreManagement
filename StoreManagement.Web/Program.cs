@@ -8,7 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
     .AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        options.DetailedErrors = builder.Environment.IsDevelopment();
+    });
 
 builder.Services.AddMudServices();
 
@@ -26,8 +29,7 @@ builder.Services.AddAuthentication(
     {
         options.Cookie.Name = "StoreManagement.Auth";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy =
-            CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.Cookie.SameSite = SameSiteMode.Lax;
 
         options.LoginPath = "/login";
@@ -53,6 +55,7 @@ builder.Services.AddHttpClient("AuthApi", client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
 });
+
 builder.Services.AddScoped<
     Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage>();
 
