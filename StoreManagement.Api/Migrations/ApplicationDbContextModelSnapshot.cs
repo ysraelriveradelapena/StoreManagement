@@ -672,7 +672,8 @@ namespace StoreManagement.Api.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -682,9 +683,13 @@ namespace StoreManagement.Api.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
 
                     b.ToTable("ReasonCodes");
                 });
@@ -732,6 +737,44 @@ namespace StoreManagement.Api.Migrations
                     b.ToTable("Stores");
                 });
 
+            modelBuilder.Entity("StoreManagement.Api.Models.StoreDayStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("BusinessDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("StoreId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreId", "BusinessDate")
+                        .IsUnique();
+
+                    b.ToTable("StoreDayStatuses");
+                });
+
             modelBuilder.Entity("StoreManagement.Api.Models.Transaction", b =>
                 {
                     b.Property<int>("Id")
@@ -740,6 +783,9 @@ namespace StoreManagement.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<Guid?>("CountSessionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int?>("DeviceId")
                         .HasColumnType("int");
 
@@ -747,14 +793,17 @@ namespace StoreManagement.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ReferenceNumber")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Remarks")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<int>("StoreId")
                         .HasColumnType("int");
@@ -772,6 +821,8 @@ namespace StoreManagement.Api.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CountSessionId");
 
                     b.HasIndex("DeviceId");
 
@@ -796,17 +847,30 @@ namespace StoreManagement.Api.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("Barcode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("LocationCode")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int>("ProductVariantId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ProductVariantId1")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("Quantity")
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("decimal(18,4)");
 
                     b.Property<string>("ReasonCode")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<int>("TransactionId")
                         .HasColumnType("int");
@@ -817,6 +881,8 @@ namespace StoreManagement.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ProductVariantId");
+
+                    b.HasIndex("ProductVariantId1");
 
                     b.HasIndex("TransactionId");
 
@@ -836,16 +902,21 @@ namespace StoreManagement.Api.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
 
                     b.ToTable("TransactionTypes");
                 });
@@ -906,7 +977,7 @@ namespace StoreManagement.Api.Migrations
                     b.HasOne("StoreManagement.Api.Models.Store", "Store")
                         .WithMany()
                         .HasForeignKey("StoreId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Store");
@@ -1016,22 +1087,34 @@ namespace StoreManagement.Api.Migrations
                     b.Navigation("ProductVariant");
                 });
 
+            modelBuilder.Entity("StoreManagement.Api.Models.StoreDayStatus", b =>
+                {
+                    b.HasOne("StoreManagement.Api.Models.Store", "Store")
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("StoreManagement.Api.Models.Transaction", b =>
                 {
                     b.HasOne("StoreManagement.Api.Models.Device", "Device")
                         .WithMany()
-                        .HasForeignKey("DeviceId");
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoreManagement.Api.Models.Store", "Store")
                         .WithMany()
                         .HasForeignKey("StoreId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("StoreManagement.Api.Models.TransactionType", "TransactionType")
                         .WithMany("Transactions")
                         .HasForeignKey("TransactionTypeId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Device");
@@ -1044,10 +1127,14 @@ namespace StoreManagement.Api.Migrations
             modelBuilder.Entity("StoreManagement.Api.Models.TransactionLine", b =>
                 {
                     b.HasOne("StoreManagement.Api.Models.ProductVariant", "ProductVariant")
-                        .WithMany("TransactionLines")
+                        .WithMany()
                         .HasForeignKey("ProductVariantId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("StoreManagement.Api.Models.ProductVariant", null)
+                        .WithMany("TransactionLines")
+                        .HasForeignKey("ProductVariantId1");
 
                     b.HasOne("StoreManagement.Api.Models.Transaction", "Transaction")
                         .WithMany("Lines")

@@ -11,7 +11,6 @@ using StoreManagement.Api.Models.Identity;
 using StoreManagement.Api.Services.Authentication;
 using StoreManagement.Api.Services.Inventory;
 using StoreManagement.Api.Services.Pricing;
-using StoreManagement.Api.Services.Sales;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -246,7 +245,6 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 
 builder.Services.AddScoped<ProductVariantPriceService>();
 builder.Services.AddScoped<InventoryService>();
-builder.Services.AddScoped<SalesService>();
 
 // ------------------------------------------------------------
 // CONTROLLERS

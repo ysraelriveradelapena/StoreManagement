@@ -1,7 +1,12 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using StoreManagement.Api.DTOs.Inventory;
-using StoreManagement.Api.Services.Inventory;
+using Microsoft.EntityFrameworkCore;
+using StoreManagement.Api.Data;
+using StoreManagement.Api.Models.Identity;
 
 namespace StoreManagement.Api.Controllers;
 
@@ -10,105 +15,89 @@ namespace StoreManagement.Api.Controllers;
 [Authorize]
 public class InventoryController : ControllerBase
 {
-    private readonly InventoryService _inventoryService;
+    private readonly ApplicationDbContext _db;
 
-    public InventoryController(InventoryService inventoryService)
+    public InventoryController(ApplicationDbContext db)
     {
-        _inventoryService = inventoryService;
+        _db = db;
     }
 
-    [HttpGet("stock")]
-    public async Task<ActionResult<InventoryStockResponse>> GetStock(
-        [FromQuery] int storeId,
-        [FromQuery] int productVariantId)
+    // GET: api/inventory?storeId=1
+    [HttpGet]
+    public async Task<IActionResult> GetInventory(
+        [FromQuery] int storeId)
     {
-        var result = await _inventoryService.GetStockAsync(
-            storeId,
-            productVariantId);
+        if (storeId <= 0)
+        {
+            return BadRequest(new
+            {
+                message = "A valid storeId is required."
+            });
+        }
 
-        if (result == null)
+        var userId =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized();
+        }
+
+        var user = await _db.Users
+            .OfType<ApplicationUser>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == userId);
+
+        if (user == null || !user.IsActive)
+        {
+            return Unauthorized(new
+            {
+                message = "The user does not exist or is inactive."
+            });
+        }
+
+        // Store-scoped users may only view their own store.
+        // Unscoped users must have the SystemAdmin role.
+        if (user.StoreId.HasValue)
+        {
+            if (user.StoreId.Value != storeId)
+            {
+                return Forbid();
+            }
+        }
+        else if (!User.IsInRole("SystemAdmin"))
+        {
+            return Forbid();
+        }
+
+        var storeExists = await _db.Stores
+            .AnyAsync(x => x.Id == storeId);
+
+        if (!storeExists)
+        {
             return NotFound(new
             {
-                message = "Product variant not found."
+                message = "Store not found."
             });
+        }
 
-        return Ok(result);
-    }
-
-    [HttpPost("receive")]
-    [Authorize(Roles = "SystemAdmin")]
-    public async Task<IActionResult> Receive(
-    ReceiveInventoryRequest request)
-    {
-        if (request.Quantity <= 0)
-            return BadRequest("Quantity must be greater than zero.");
-
-        var id = await _inventoryService.ReceiveAsync(
-            request.StoreId,
-            request.ProductVariantId,
-            request.Quantity,
-            request.LocationCode);
-
-        if (id == null)
-            return BadRequest(
-                "Store does not exist or product variant does not exist or is inactive.");
+        var inventory = await _db.Set<StoreManagement.Api.Models.InventoryTransaction>()
+            .AsNoTracking()
+            .Where(x => x.StoreId == storeId)
+            .GroupBy(x => x.ProductVariantId)
+            .Select(g => new
+            {
+                ProductVariantId = g.Key,
+                CurrentStock = g.Sum(x => x.Quantity)
+            })
+            .OrderBy(x => x.ProductVariantId)
+            .ToListAsync();
 
         return Ok(new
         {
-            id,
-            message = "Inventory received successfully."
+            StoreId = storeId,
+            Inventory = inventory
         });
-    }
-
-    [HttpPost("adjust")]
-    [Authorize(Roles = "SystemAdmin")]
-    public async Task<IActionResult> Adjust(
-    AdjustInventoryRequest request)
-    {
-        var result = await _inventoryService.AdjustAsync(
-            request.StoreId,
-            request.ProductVariantId,
-            request.Quantity,
-            request.LocationCode);
-
-        if (!result.Success)
-            return BadRequest(result.Error);
-
-        return Ok(new
-        {
-            id = result.Id,
-            message = "Inventory adjusted successfully."
-        });
-    }
-
-    [HttpPost("transfer")]
-    [Authorize(Roles = "SystemAdmin")]
-    public async Task<IActionResult> Transfer(
-    TransferInventoryRequest request)
-    {
-        var result = await _inventoryService.TransferAsync(
-            request.FromStoreId,
-            request.ToStoreId,
-            request.ProductVariantId,
-            request.Quantity,
-            request.FromLocationCode,
-            request.ToLocationCode);
-
-        if (!result.Success)
-            return BadRequest(result.Error);
-
-        return Ok(new
-        {
-            message = "Inventory transferred successfully."
-        });
-    }
-
-    [HttpGet("history")]
-    public async Task<ActionResult<InventoryHistoryResponse>> GetHistory(
-    [FromQuery] InventoryHistoryRequest request)
-    {
-        var result = await _inventoryService.GetHistoryAsync(request);
-
-        return Ok(result);
     }
 }

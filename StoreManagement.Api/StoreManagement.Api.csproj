@@ -30,6 +30,7 @@
   <ItemGroup>
     <Folder Include="Configuration\" />
     <Folder Include="Services\Inventory\" />
+    <Folder Include="Services\Sales\" />
     <Folder Include="Services\Transactions\" />
   </ItemGroup>
 
