@@ -22,18 +22,23 @@ var configuration = builder.Configuration;
 // DATABASE
 // ------------------------------------------------------------
 
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseSqlServer(
-        configuration.GetConnectionString("DefaultConnection"),
-        sql =>
-        {
-            sql.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
-                errorNumbersToAdd: null);
-        });
+    options
+        .UseSqlServer(
+            configuration.GetConnectionString("DefaultConnection"),
+            sql =>
+            {
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null);
+            })
+        .EnableDetailedErrors()
+        .EnableSensitiveDataLogging(false);
 });
+
 
 // ------------------------------------------------------------
 // IDENTITY
@@ -304,6 +309,8 @@ builder.Services.AddCors(options =>
     {
         policy
             .WithOrigins(
+                "https://store-management.runasp.net",
+                "http://store-management.runasp.net",
                 "https://localhost:7001",
                 "https://localhost:5001")
             .AllowAnyHeader()
@@ -317,6 +324,65 @@ builder.Services.AddCors(options =>
 // ------------------------------------------------------------
 
 var app = builder.Build();
+app.MapGet("/health", async (
+    StoreManagement.Api.Data.ApplicationDbContext db) =>
+{
+    try
+    {
+        var canConnect = await db.Database.CanConnectAsync();
+
+        if (!canConnect)
+        {
+            return Results.Problem(
+                title: "Database unavailable",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return Results.Ok(new
+        {
+            status = "Healthy",
+            database = "Connected",
+            application = "StoreManagement.Api",
+            timestampUtc = DateTime.UtcNow
+        });
+    }
+    catch
+    {
+        return Results.Problem(
+            title: "Database connection failed",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var exceptionFeature =
+            context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ProductionException");
+
+        if (exceptionFeature?.Error != null)
+        {
+            logger.LogError(
+                exceptionFeature.Error,
+                "Unhandled exception on {Path}",
+                exceptionFeature.Path);
+        }
+
+        context.Response.StatusCode =
+            StatusCodes.Status500InternalServerError;
+
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "An unexpected server error occurred."
+        });
+    });
+});
 
 // ------------------------------------------------------------
 // DATABASE SEEDING

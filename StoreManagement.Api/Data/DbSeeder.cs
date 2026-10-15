@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using StoreManagement.Api.Models.Identity;
 
@@ -28,31 +29,45 @@ public static class DbSeeder
     public static async Task SeedAsync(
         IServiceProvider services)
     {
-        using var scope =
-            services.CreateScope();
+        using var scope = services.CreateScope();
 
-        var serviceProvider =
-            scope.ServiceProvider;
+        var provider = scope.ServiceProvider;
 
-        var db =
-            serviceProvider
-                .GetRequiredService<ApplicationDbContext>();
+        var db = provider
+            .GetRequiredService<ApplicationDbContext>();
 
-        var roleManager =
-            serviceProvider
-                .GetRequiredService<RoleManager<IdentityRole>>();
+        var roleManager = provider
+            .GetRequiredService<RoleManager<IdentityRole>>();
 
-        var userManager =
-            serviceProvider
-                .GetRequiredService<UserManager<ApplicationUser>>();
+        var userManager = provider
+            .GetRequiredService<UserManager<ApplicationUser>>();
 
-        await db.Database.MigrateAsync();
+        // Development only.
+        // Production migrations must be applied separately.
+        if (provider.GetRequiredService<IHostEnvironment>()
+            .IsDevelopment())
+        {
+            await db.Database.MigrateAsync();
+        }
+
+        // Verify that production database is initialized.
+        if (!await db.Database.CanConnectAsync())
+        {
+            throw new InvalidOperationException(
+                "Unable to connect to StoreManagement database.");
+        }
+
+        if ((await db.Database.GetPendingMigrationsAsync()).Any())
+        {
+            throw new InvalidOperationException(
+                "Pending database migrations detected. Apply migrations before starting the API.");
+        }
 
         await SeedRolesAsync(roleManager);
 
         await SeedAdministratorAsync(
             userManager,
-            serviceProvider);
+            provider);
     }
 
     private static async Task SeedRolesAsync(
@@ -61,24 +76,17 @@ public static class DbSeeder
         foreach (var role in Roles)
         {
             if (await roleManager.RoleExistsAsync(role))
-            {
                 continue;
-            }
 
-            var result =
-                await roleManager.CreateAsync(
-                    new IdentityRole(role));
+            var result = await roleManager.CreateAsync(
+                new IdentityRole(role));
 
             if (!result.Succeeded)
             {
-                var errors =
-                    string.Join(
-                        "; ",
-                        result.Errors.Select(
-                            x => x.Description));
-
                 throw new InvalidOperationException(
-                    $"Unable to create role '{role}': {errors}");
+                    $"Unable to create role '{role}': " +
+                    string.Join("; ",
+                        result.Errors.Select(x => x.Description)));
             }
         }
     }
@@ -87,26 +95,16 @@ public static class DbSeeder
         UserManager<ApplicationUser> userManager,
         IServiceProvider services)
     {
-        var configuration =
-            services
-                .GetRequiredService<IConfiguration>();
+        var configuration = services
+            .GetRequiredService<IConfiguration>();
 
-        var email =
-            configuration["AdminUser:Email"];
-
-        var password =
-            configuration["AdminUser:Password"];
+        var email = configuration["AdminUser:Email"];
+        var password = configuration["AdminUser:Password"];
 
         if (string.IsNullOrWhiteSpace(email))
         {
             throw new InvalidOperationException(
                 "AdminUser:Email is not configured.");
-        }
-
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            throw new InvalidOperationException(
-                "AdminUser:Password is not configured.");
         }
 
         var existingUser =
@@ -115,62 +113,58 @@ public static class DbSeeder
         if (existingUser != null)
         {
             if (!await userManager.IsInRoleAsync(
-                    existingUser,
-                    SystemAdminRole))
+                existingUser, SystemAdminRole))
             {
-                await userManager.AddToRoleAsync(
-                    existingUser,
-                    SystemAdminRole);
+                var result = await userManager.AddToRoleAsync(
+                    existingUser, SystemAdminRole);
+
+                if (!result.Succeeded)
+                {
+                    throw new InvalidOperationException(
+                        "Unable to assign administrator role: " +
+                        string.Join("; ",
+                            result.Errors.Select(x => x.Description)));
+                }
             }
 
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException(
+                "AdminUser:Password is required when creating the initial administrator.");
+        }
+
         var user = new ApplicationUser
         {
             UserName = email,
-
             Email = email,
-
             EmailConfirmed = true,
-
             IsActive = true,
-
             CreatedAtUtc = DateTime.UtcNow
         };
 
-        var createResult =
-            await userManager.CreateAsync(
-                user,
-                password);
+        var createResult = await userManager.CreateAsync(
+            user, password);
 
         if (!createResult.Succeeded)
         {
-            var errors =
-                string.Join(
-                    "; ",
-                    createResult.Errors.Select(
-                        x => x.Description));
-
             throw new InvalidOperationException(
-                $"Unable to create administrator: {errors}");
+                "Unable to create administrator: " +
+                string.Join("; ",
+                    createResult.Errors.Select(x => x.Description)));
         }
 
-        var roleResult =
-            await userManager.AddToRoleAsync(
-                user,
-                SystemAdminRole);
+        var roleResult = await userManager.AddToRoleAsync(
+            user, SystemAdminRole);
 
         if (!roleResult.Succeeded)
         {
-            var errors =
-                string.Join(
-                    "; ",
-                    roleResult.Errors.Select(
-                        x => x.Description));
-
             throw new InvalidOperationException(
-                $"Unable to assign administrator role: {errors}");
+                "Unable to assign administrator role: " +
+                string.Join("; ",
+                    roleResult.Errors.Select(x => x.Description)));
         }
     }
 }

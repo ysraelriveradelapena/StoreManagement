@@ -16,10 +16,14 @@ namespace StoreManagement.Api.Controllers;
 public class BrandsController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly ILogger<BrandsController> _logger;
 
-    public BrandsController(ApplicationDbContext db)
+    public BrandsController(
+        ApplicationDbContext db,
+        ILogger<BrandsController> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
     private string? CurrentUserId =>
@@ -49,6 +53,8 @@ public class BrandsController : ControllerBase
         };
     }
 
+    // GET ALL BRANDS
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<BrandResponse>>> GetBrands(
         [FromQuery] bool includeInactive = false)
@@ -56,7 +62,9 @@ public class BrandsController : ControllerBase
         var query = _db.Brands.AsNoTracking();
 
         if (!includeInactive)
+        {
             query = query.Where(x => x.IsActive);
+        }
 
         var result = await query
             .OrderBy(x => x.Name)
@@ -72,6 +80,8 @@ public class BrandsController : ControllerBase
 
         return Ok(result);
     }
+
+    // GET BRAND BY ID
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<BrandResponse>> GetBrand(int id)
@@ -90,97 +100,172 @@ public class BrandsController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (brand == null)
-            return NotFound(new { message = "Brand not found." });
+        {
+            return NotFound(new
+            {
+                message = "Brand not found."
+            });
+        }
 
         return Ok(brand);
     }
 
+    // CREATE BRAND
+    // The execution strategy wraps the complete transaction so it can
+    // retry database operations when the configured SQL strategy allows it.
+
     [HttpPost]
     [Authorize(Roles = "SystemAdmin")]
     public async Task<ActionResult<BrandResponse>> CreateBrand(
-        CreateBrandRequest request)
+        [FromBody] CreateBrandRequest request)
     {
         var name = request.Name?.Trim();
 
         if (string.IsNullOrWhiteSpace(name))
-            return BadRequest(new { message = "Brand name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Brand name is required."
+            });
+        }
 
-        var exists = await _db.Brands
-            .AnyAsync(x => x.Name == name);
-
-        if (exists)
+        if (await _db.Brands.AnyAsync(x => x.Name == name))
+        {
             return Conflict(new
             {
                 message = $"Brand '{name}' already exists."
             });
+        }
 
-        var brand = new Brand
+        try
         {
-            Name = name,
-            IsActive = true,
-            CreatedAtUtc = DateTime.UtcNow
-        };
+            var strategy = _db.Database.CreateExecutionStrategy();
 
-        // Brand ID is database-generated.
-        // Save the Brand first, then create its audit record
-        // within the same database transaction.
-        await using var transaction =
-            await _db.Database.BeginTransactionAsync();
-
-        _db.Brands.Add(brand);
-        await _db.SaveChangesAsync();
-
-        _db.AuditLogs.Add(CreateAuditLog(
-            brand.Id,
-            "CREATE",
-            null,
-            new
+            var brand = await strategy.ExecuteAsync(async () =>
             {
-                brand.Name,
-                brand.IsActive
-            }));
+                // Reset tracked entities before a possible retry.
+                _db.ChangeTracker.Clear();
 
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
+                await using var transaction =
+                    await _db.Database.BeginTransactionAsync();
 
-        return CreatedAtAction(
-            nameof(GetBrand),
-            new { id = brand.Id },
-            new BrandResponse
-            {
-                Id = brand.Id,
-                Name = brand.Name,
-                IsActive = brand.IsActive,
-                CreatedAtUtc = brand.CreatedAtUtc
+                try
+                {
+                    var entity = new Brand
+                    {
+                        Name = name,
+                        IsActive = true,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+
+                    _db.Brands.Add(entity);
+
+                    // Save first to obtain the database-generated ID.
+                    await _db.SaveChangesAsync();
+
+                    _db.AuditLogs.Add(CreateAuditLog(
+                        entity.Id,
+                        "CREATE",
+                        null,
+                        new
+                        {
+                            entity.Name,
+                            entity.IsActive
+                        }));
+
+                    // Save the audit record inside the same transaction.
+                    await _db.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+
+                    return entity;
+                }
+                catch
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogWarning(
+                            rollbackException,
+                            "Rollback failed while creating brand {BrandName}.",
+                            name);
+                    }
+
+                    _db.ChangeTracker.Clear();
+                    throw;
+                }
             });
+
+            return CreatedAtAction(
+                nameof(GetBrand),
+                new { id = brand.Id },
+                new BrandResponse
+                {
+                    Id = brand.Id,
+                    Name = brand.Name,
+                    IsActive = brand.IsActive,
+                    CreatedAtUtc = brand.CreatedAtUtc,
+                    UpdatedAtUtc = brand.UpdatedAtUtc
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create brand. BrandName={BrandName}",
+                name);
+
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new
+                {
+                    message = "Unable to create the brand. Please try again."
+                });
+        }
     }
+
+    // UPDATE BRAND
 
     [HttpPut("{id:int}")]
     [Authorize(Roles = "SystemAdmin")]
     public async Task<ActionResult<BrandResponse>> UpdateBrand(
         int id,
-        UpdateBrandRequest request)
+        [FromBody] UpdateBrandRequest request)
     {
         var brand = await _db.Brands.FindAsync(id);
 
         if (brand == null)
-            return NotFound(new { message = "Brand not found." });
+        {
+            return NotFound(new
+            {
+                message = "Brand not found."
+            });
+        }
 
         var name = request.Name?.Trim();
 
         if (string.IsNullOrWhiteSpace(name))
-            return BadRequest(new { message = "Brand name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Brand name is required."
+            });
+        }
 
         var duplicate = await _db.Brands
             .AnyAsync(x => x.Id != id && x.Name == name);
 
         if (duplicate)
+        {
             return Conflict(new
             {
                 message = $"Brand '{name}' already exists."
             });
+        }
 
-        // Avoid creating audit records for unchanged values.
         if (brand.Name == name)
         {
             return Ok(new BrandResponse
@@ -210,7 +295,7 @@ public class BrandsController : ControllerBase
                 brand.Name
             }));
 
-        // Both changes are saved in the same SaveChanges transaction.
+        // Brand update and audit record are saved together.
         await _db.SaveChangesAsync();
 
         return Ok(new BrandResponse
@@ -223,16 +308,23 @@ public class BrandsController : ControllerBase
         });
     }
 
+    // ACTIVATE / DEACTIVATE BRAND
+
     [HttpPatch("{id:int}/status")]
     [Authorize(Roles = "SystemAdmin")]
     public async Task<IActionResult> UpdateBrandStatus(
         int id,
-        UpdateBrandStatusRequest request)
+        [FromBody] UpdateBrandStatusRequest request)
     {
         var brand = await _db.Brands.FindAsync(id);
 
         if (brand == null)
-            return NotFound(new { message = "Brand not found." });
+        {
+            return NotFound(new
+            {
+                message = "Brand not found."
+            });
+        }
 
         if (brand.IsActive == request.IsActive)
         {

@@ -16,13 +16,17 @@ namespace StoreManagement.Api.Controllers;
 public class StoresController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly ILogger<StoresController> _logger;
 
-    public StoresController(ApplicationDbContext db)
+    public StoresController(
+        ApplicationDbContext db,
+        ILogger<StoresController> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
-    // AUDIT LOG HELPER
+    // AUDIT LOG HELPERS
 
     private string? CurrentUserId =>
         User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -41,15 +45,12 @@ public class StoresController : ControllerBase
             Action = action,
             UserId = CurrentUserId,
             CreatedAtUtc = DateTime.UtcNow,
-
             OldValues = oldValues == null
                 ? null
                 : JsonSerializer.Serialize(oldValues),
-
             NewValues = newValues == null
                 ? null
                 : JsonSerializer.Serialize(newValues),
-
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
         };
     }
@@ -80,7 +81,9 @@ public class StoresController : ControllerBase
         IQueryable<Store> query = _db.Stores.AsNoTracking();
 
         if (!includeInactive)
+        {
             query = query.Where(x => x.IsActive);
+        }
 
         var stores = await query
             .OrderBy(x => x.StoreCode)
@@ -122,31 +125,45 @@ public class StoresController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (store == null)
-            return NotFound(new { message = "Store not found." });
+        {
+            return NotFound(new
+            {
+                message = "Store not found."
+            });
+        }
 
         return Ok(store);
     }
 
     // CREATE STORE
+    // Uses EF Core's configured execution strategy because SQL Server
+    // retry support does not allow a user-created transaction outside it.
 
     [HttpPost]
     [Authorize(Roles = "SystemAdmin")]
     public async Task<ActionResult<StoreResponse>> CreateStore(
-        CreateStoreRequest request)
+        [FromBody] CreateStoreRequest request)
     {
         var storeCode = request.StoreCode?.Trim();
         var storeName = request.StoreName?.Trim();
 
         if (string.IsNullOrWhiteSpace(storeCode))
-            return BadRequest(new { message = "Store code is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Store code is required."
+            });
+        }
 
         if (string.IsNullOrWhiteSpace(storeName))
-            return BadRequest(new { message = "Store name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Store name is required."
+            });
+        }
 
-        var exists = await _db.Stores
-            .AnyAsync(x => x.StoreCode == storeCode);
-
-        if (exists)
+        if (await _db.Stores.AnyAsync(x => x.StoreCode == storeCode))
         {
             return Conflict(new
             {
@@ -154,56 +171,99 @@ public class StoresController : ControllerBase
             });
         }
 
-        var store = new Store
+        try
         {
-            StoreCode = storeCode,
-            StoreName = storeName,
+            var strategy = _db.Database.CreateExecutionStrategy();
 
-            DepartmentStore =
-                string.IsNullOrWhiteSpace(request.DepartmentStore)
-                    ? null
-                    : request.DepartmentStore.Trim(),
-
-            Location =
-                string.IsNullOrWhiteSpace(request.Location)
-                    ? null
-                    : request.Location.Trim(),
-
-            IsActive = true,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-
-        // Store ID is database-generated.
-        // Save Store and audit log within one transaction.
-
-        await using var transaction =
-            await _db.Database.BeginTransactionAsync();
-
-        _db.Stores.Add(store);
-
-        await _db.SaveChangesAsync();
-
-        _db.AuditLogs.Add(CreateAuditLog(
-            store.Id,
-            "CREATE",
-            null,
-            new
+            var store = await strategy.ExecuteAsync(async () =>
             {
-                store.StoreCode,
-                store.StoreName,
-                store.DepartmentStore,
-                store.Location,
-                store.IsActive
-            }));
+                // Reset tracked state before an execution-strategy retry.
+                _db.ChangeTracker.Clear();
 
-        await _db.SaveChangesAsync();
+                await using var transaction =
+                    await _db.Database.BeginTransactionAsync();
 
-        await transaction.CommitAsync();
+                try
+                {
+                    var entity = new Store
+                    {
+                        StoreCode = storeCode,
+                        StoreName = storeName,
+                        DepartmentStore =
+                            string.IsNullOrWhiteSpace(request.DepartmentStore)
+                                ? null
+                                : request.DepartmentStore.Trim(),
+                        Location =
+                            string.IsNullOrWhiteSpace(request.Location)
+                                ? null
+                                : request.Location.Trim(),
+                        IsActive = true,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
 
-        return CreatedAtAction(
-            nameof(GetStore),
-            new { id = store.Id },
-            ToResponse(store));
+                    _db.Stores.Add(entity);
+
+                    // Save first so the database-generated ID is available.
+                    await _db.SaveChangesAsync();
+
+                    _db.AuditLogs.Add(CreateAuditLog(
+                        entity.Id,
+                        "CREATE",
+                        null,
+                        new
+                        {
+                            entity.StoreCode,
+                            entity.StoreName,
+                            entity.DepartmentStore,
+                            entity.Location,
+                            entity.IsActive
+                        }));
+
+                    // Save the audit record in the same transaction.
+                    await _db.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+
+                    return entity;
+                }
+                catch
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogWarning(
+                            rollbackException,
+                            "Rollback failed while creating store {StoreCode}.",
+                            storeCode);
+                    }
+
+                    _db.ChangeTracker.Clear();
+                    throw;
+                }
+            });
+
+            return CreatedAtAction(
+                nameof(GetStore),
+                new { id = store.Id },
+                ToResponse(store));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to create store. StoreCode={StoreCode}",
+                storeCode);
+
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new
+                {
+                    message = "Unable to create the store. Please try again."
+                });
+        }
     }
 
     // UPDATE STORE
@@ -212,27 +272,40 @@ public class StoresController : ControllerBase
     [Authorize(Roles = "SystemAdmin")]
     public async Task<ActionResult<StoreResponse>> UpdateStore(
         int id,
-        UpdateStoreRequest request)
+        [FromBody] UpdateStoreRequest request)
     {
         var store = await _db.Stores
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (store == null)
-            return NotFound(new { message = "Store not found." });
+        {
+            return NotFound(new
+            {
+                message = "Store not found."
+            });
+        }
 
         var storeCode = request.StoreCode?.Trim();
         var storeName = request.StoreName?.Trim();
 
         if (string.IsNullOrWhiteSpace(storeCode))
-            return BadRequest(new { message = "Store code is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Store code is required."
+            });
+        }
 
         if (string.IsNullOrWhiteSpace(storeName))
-            return BadRequest(new { message = "Store name is required." });
+        {
+            return BadRequest(new
+            {
+                message = "Store name is required."
+            });
+        }
 
         var duplicate = await _db.Stores
-            .AnyAsync(x =>
-                x.Id != id &&
-                x.StoreCode == storeCode);
+            .AnyAsync(x => x.Id != id && x.StoreCode == storeCode);
 
         if (duplicate)
         {
@@ -252,8 +325,6 @@ public class StoresController : ControllerBase
                 ? null
                 : request.Location.Trim();
 
-        // Skip saving and auditing if nothing changed.
-
         if (store.StoreCode == storeCode &&
             store.StoreName == storeName &&
             store.DepartmentStore == departmentStore &&
@@ -261,8 +332,6 @@ public class StoresController : ControllerBase
         {
             return Ok(ToResponse(store));
         }
-
-        // Capture previous values BEFORE updating the entity.
 
         var oldValues = new
         {
@@ -290,8 +359,7 @@ public class StoresController : ControllerBase
                 store.Location
             }));
 
-        // Store update and audit record are saved together.
-
+        // Both changes are saved in one EF Core transaction.
         await _db.SaveChangesAsync();
 
         return Ok(ToResponse(store));
@@ -303,13 +371,18 @@ public class StoresController : ControllerBase
     [Authorize(Roles = "SystemAdmin")]
     public async Task<IActionResult> UpdateStoreStatus(
         int id,
-        UpdateStoreStatusRequest request)
+        [FromBody] UpdateStoreStatusRequest request)
     {
         var store = await _db.Stores
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (store == null)
-            return NotFound(new { message = "Store not found." });
+        {
+            return NotFound(new
+            {
+                message = "Store not found."
+            });
+        }
 
         if (store.IsActive == request.IsActive)
         {
@@ -338,6 +411,7 @@ public class StoresController : ControllerBase
                 store.IsActive
             }));
 
+        // Status change and audit record are saved together.
         await _db.SaveChangesAsync();
 
         return Ok(new
@@ -345,7 +419,6 @@ public class StoresController : ControllerBase
             message = request.IsActive
                 ? "Store activated."
                 : "Store deactivated.",
-
             storeId = store.Id,
             isActive = store.IsActive
         });

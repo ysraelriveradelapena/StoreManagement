@@ -16,13 +16,15 @@ namespace StoreManagement.Api.Controllers;
 public class ReasonCodesController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly ILogger<ReasonCodesController> _logger;
 
-    public ReasonCodesController(ApplicationDbContext db)
+    public ReasonCodesController(
+        ApplicationDbContext db,
+        ILogger<ReasonCodesController> logger)
     {
         _db = db;
+        _logger = logger;
     }
-
-    // AUDIT LOG HELPER
 
     private string? CurrentUserId =>
         User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -41,15 +43,12 @@ public class ReasonCodesController : ControllerBase
             Action = action,
             UserId = CurrentUserId,
             CreatedAtUtc = DateTime.UtcNow,
-
             OldValues = oldValues == null
                 ? null
                 : JsonSerializer.Serialize(oldValues),
-
             NewValues = newValues == null
                 ? null
                 : JsonSerializer.Serialize(newValues),
-
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
         };
     }
@@ -112,6 +111,8 @@ public class ReasonCodesController : ControllerBase
     }
 
     // CREATE REASON CODE
+    // Uses the configured EF Core execution strategy.
+    // The reason code and its audit record are saved in one transaction.
 
     [HttpPost]
     [Authorize(Roles = "SystemAdmin")]
@@ -130,10 +131,7 @@ public class ReasonCodesController : ControllerBase
             });
         }
 
-        var codeExists = await _db.ReasonCodes
-            .AnyAsync(x => x.Code == code);
-
-        if (codeExists)
+        if (await _db.ReasonCodes.AnyAsync(x => x.Code == code))
         {
             return Conflict(new
             {
@@ -141,52 +139,86 @@ public class ReasonCodesController : ControllerBase
             });
         }
 
-        var reasonCode = new ReasonCode
+        try
         {
-            Code = code,
-            Name = name,
-            IsActive = true,
-            CreatedAtUtc = DateTime.UtcNow
-        };
+            var strategy = _db.Database.CreateExecutionStrategy();
 
-        // Save the Reason Code and audit record
-        // within one database transaction.
-
-        await using var transaction =
-            await _db.Database.BeginTransactionAsync();
-
-        _db.ReasonCodes.Add(reasonCode);
-
-        await _db.SaveChangesAsync();
-
-        _db.AuditLogs.Add(CreateAuditLog(
-            reasonCode.Id,
-            "CREATE",
-            null,
-            new
+            var reasonCode = await strategy.ExecuteAsync(async () =>
             {
-                reasonCode.Code,
-                reasonCode.Name,
-                reasonCode.IsActive
-            }));
+                // Clear failed-attempt tracking before a possible retry.
+                _db.ChangeTracker.Clear();
 
-        await _db.SaveChangesAsync();
+                await using var transaction =
+                    await _db.Database.BeginTransactionAsync();
 
-        await transaction.CommitAsync();
+                try
+                {
+                    var entity = new ReasonCode
+                    {
+                        Code = code,
+                        Name = name,
+                        IsActive = true,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
 
-        var response = new ReasonCodeResponse
+                    _db.ReasonCodes.Add(entity);
+
+                    // Generate the database identity first.
+                    await _db.SaveChangesAsync();
+
+                    // Now EntityId contains the actual generated ID.
+                    _db.AuditLogs.Add(CreateAuditLog(
+                        entity.Id,
+                        "CREATE",
+                        null,
+                        new
+                        {
+                            entity.Code,
+                            entity.Name,
+                            entity.IsActive
+                        }));
+
+                    await _db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return entity;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    _db.ChangeTracker.Clear();
+                    throw;
+                }
+            });
+
+            var response = new ReasonCodeResponse
+            {
+                Id = reasonCode.Id,
+                Code = reasonCode.Code,
+                Name = reasonCode.Name,
+                IsActive = reasonCode.IsActive,
+                CreatedAtUtc = reasonCode.CreatedAtUtc
+            };
+
+            return CreatedAtAction(
+                nameof(GetReasonCode),
+                new { id = reasonCode.Id },
+                response);
+        }
+        catch (Exception ex)
         {
-            Id = reasonCode.Id,
-            Code = reasonCode.Code,
-            Name = reasonCode.Name,
-            IsActive = reasonCode.IsActive,
-            CreatedAtUtc = reasonCode.CreatedAtUtc
-        };
+            _logger.LogError(
+                ex,
+                "Failed to create reason code. Code={Code}",
+                code);
 
-        return CreatedAtAction(
-            nameof(GetReasonCode),
-            new { id = reasonCode.Id },
-            response);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new
+                {
+                    message = "Unable to create the reason code. Please try again."
+                });
+        }
     }
 
     // UPDATE REASON CODE
@@ -230,8 +262,6 @@ public class ReasonCodesController : ControllerBase
             });
         }
 
-        // Avoid audit records when nothing has changed.
-
         if (reasonCode.Code == code &&
             reasonCode.Name == name)
         {
@@ -264,8 +294,7 @@ public class ReasonCodesController : ControllerBase
                 reasonCode.Name
             }));
 
-        // Update and audit insert are saved together.
-
+        // EF Core saves the entity update and audit record together.
         await _db.SaveChangesAsync();
 
         return Ok(new ReasonCodeResponse
@@ -296,8 +325,6 @@ public class ReasonCodesController : ControllerBase
             });
         }
 
-        // Avoid duplicate audit records for unchanged status.
-
         if (reasonCode.IsActive == request.IsActive)
         {
             return Ok(new
@@ -324,6 +351,7 @@ public class ReasonCodesController : ControllerBase
                 reasonCode.IsActive
             }));
 
+        // EF Core saves the status change and audit record together.
         await _db.SaveChangesAsync();
 
         return Ok(new
@@ -331,7 +359,6 @@ public class ReasonCodesController : ControllerBase
             message = request.IsActive
                 ? "Reason code activated successfully."
                 : "Reason code deactivated successfully.",
-
             reasonCode.Id,
             reasonCode.IsActive
         });
